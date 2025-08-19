@@ -2,51 +2,87 @@ import torch
 import torch.nn.functional as F
 
 
-def loss(b, a, T, margin, lmbda, mask=None, stop_grad=False):
+def losses(b, a, T, margin, λ=0.7, mask=None, stop_gradient=False):
     """
     b: List of teacher features
     a: List of student features
+    mask: Binary mask, where 0 for normal and 1 for abnormal
     T: Temperature coefficient
     margin: Hyperparameter for controlling the boundary
-    lmbda: Hyperparameter for balancing loss
-    mask: Binary mask, where 0 for normal and 1 for abnormal
+    λ: Hyperparameter for balancing loss
     """
-    margin_loss_n = 0.0
-    margin_loss_an = 0.0
-    contra_loss = 0.0
 
+    loss = 0.0
+    margin_loss_n = 0.0
+    margin_loss_a = 0.0
+    contra_loss = 0.0
     for i in range(len(a)):
         s_ = a[i]
-        t_ = b[i].detach() if stop_grad else b[i]
+        t_ = b[i].detach() if stop_gradient else b[i]
 
         n, c, h, w = s_.shape
 
-        # view() : shape 변경
         s = s_.view(n, c, -1).transpose(1, 2)  # (N, H*W, C)
-        t = t_.view(n, c, -1).transpose(1, 2)
+        t = t_.view(n, c, -1).transpose(1, 2)  # (N, H*W, C)
 
-        s_norm = F.normalize(s, p=2, d=2)
-        t_norm = F.normalize(t, p=2, d=2)
+        s_norm = F.normalize(s, p=2, dim=2)
+        t_norm = F.normalize(t, p=2, dim=2)
 
         cos_loss = 1 - F.cosine_similarity(s_norm, t_norm, dim=2)
         cos_loss = cos_loss.mean()
 
-        simi = torch.matmul(
-            s_norm,
-            t_norm.transpose(1, 2),
-        )
-        simi /= T
+        simi = torch.matmul(s_norm, t_norm.transpose(1, 2)) / T
         simi = torch.exp(simi)
         simi_sum = simi.sum(dim=2, keepdim=True)
         simi = simi / (simi_sum + 1e-8)
-        diag_simi = torch.diagonal(simi, dim1=1, dim2=2)
+        diag_sim = torch.diagonal(simi, dim1=1, dim2=2)
 
-        # for unsupervised, one class (only normal)
+        # unsupervised and only normal (or abnormal)
         if mask is None:
-            contra_loss = -torch.log(diag_simi + 1e-8).mean()
-            margin_loss_n = F.relu(margin - diag_simi).mean()
+            contra_loss = -torch.log(diag_sim + 1e-8).mean()
+            margin_loss_n = F.relu(margin - diag_sim).mean()
 
-        margin_loss = margin_loss_n + margin_loss_an
-        loss = lmbda * cos_loss + (1 - lmbda) * contra_loss + margin_loss
+        # supervised
+        else:
+            # gt label
+            if len(mask.size()) < 3:
+                normal_mask = (mask == 0)
+                abnormal_mask = (mask == 1)
+            # gt mask
+            else:
+                mask_ = F.interpolate(mask, size=(h, w), mode='nearest').squeeze(1)
+                mask_flat = mask.view(mask_.size(0), -1)
 
-        return loss
+                normal_mask = (mask_flat == 0)
+                abnormal_mask = (mask_flat == 1)
+
+            if normal_mask.sum() > 0:
+                diag_sim_normal = diag_sim[normal_mask]
+                contra_loss = -torch.log(diag_sim_normal + 1e-8).mean()
+                margin_loss_n = F.relu(margin - diag_sim_normal).mean()
+            if abnormal_mask.sum() > 0:
+                diag_sim_abnormal = diag_sim[abnormal_mask]
+                margin_loss_a = F.relu(diag_sim_abnormal - margin / 2).mean()
+
+        margin_loss = margin_loss_n + margin_loss_a
+
+        loss += cos_loss * λ + contra_loss * (1 - λ) + margin_loss
+
+    return loss
+
+
+def structure_loss(pred, mask):
+    weit = 1 + 5 * torch.abs(F.avg_pool2d(mask, kernel_size=31, stride=1, padding=15) - mask)
+    wbce = F.binary_cross_entropy_with_logits(pred, mask, reduce='none')
+    wbce = (weit * wbce).sum(dim=(2, 3)) / weit.sum(dim=(2, 3))
+
+    pred = torch.sigmoid(pred)
+    inter = ((pred * mask) * weit).sum(dim=(2, 3))
+    union = ((pred + mask) * weit).sum(dim=(2, 3))
+    wiou = 1 - (inter + 1) / (union - inter + 1)
+
+    return (wbce + wiou).mean()
+
+if __name__ == '__main__':
+    a = torch.tensor([[0], [0], [0]])
+    print(len(a.size()))
