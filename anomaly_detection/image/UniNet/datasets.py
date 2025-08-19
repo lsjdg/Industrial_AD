@@ -1,93 +1,112 @@
-import os
-import numpy as np
+from torchvision import transforms
 from PIL import Image
+import os
 import torch
-from torch.utils.data import Dataset
-from torchvision import transforms as T
 import glob
+import numpy as np
 
-# MVTecAD classes
-CLASSES = [
-    "bottle",
-    "cable",
-    "capsule",
+from torchvision import transforms as T
+from torchvision.transforms import InterpolationMode
+
+import warnings
+
+warnings.filterwarnings(
+    "ignore", category=RuntimeWarning, module="importlib._bootstrap"
+)
+
+
+BTAD_PATH = os.path.abspath(os.path.join("D:\ws/btad"))
+
+industrial = [
+    "MVTecAD",
+]
+unsupervised = [
+    "MVTecAD",
+]
+
+mvtec_list = [
     "carpet",
-    "grid",
+    "bottle",
     "hazelnut",
     "leather",
-    "metal_nut",
+    "cable",
+    "capsule",
+    "grid",
     "pill",
-    "screw",
-    "tile",
-    "toothbrush",
     "transistor",
-    "wood",
+    "metal_nut",
+    "screw",
+    "toothbrush",
     "zipper",
+    "tile",
+    "wood",
 ]
 
 
-class MVTecDataset(Dataset):
-    def __init__(
-        self,
-        c,  # argparser
-        class_name="bottle",
-        is_train=True,
-        resize=256,
-    ):
-        # check availability of class name
-        assert class_name in CLASSES, f"class {class_name} is not available."
+def loading_dataset(c, dataset_name):
+    train_dataloader, test_dataloader = None, None
 
-        self.path = "../datasets/MVTecAD"
-        self.class_name = class_name
-        self.resize = resize
+    if dataset_name == "MVTecAD" and c.setting == "oc":
+        train_data = MVTecDataset(c, is_train=True)
+        test_data = MVTecDataset(c, is_train=False)
+        train_dataloader = torch.utils.data.DataLoader(
+            train_data, batch_size=c.batch_size, shuffle=True, pin_memory=True
+        )
+        test_dataloader = torch.utils.data.DataLoader(
+            test_data, batch_size=1, shuffle=False, pin_memory=True
+        )
+
+    return train_dataloader, test_dataloader
+
+
+class MVTecDataset(torch.utils.data.Dataset):
+    def __init__(self, c, is_train=True, dataset="MVTecAD"):
+        self.dataset_path = "../datasets/" + dataset
+        self.class_name = c._class_
+        self.is_train = is_train
+
         self.input_size = (c.image_size, c.image_size)
-        self.phase = "train" if is_train else "test"
-        self.img_dir = os.path.join(self.path, self.class_name, self.phase)
-        self.gt_dir = os.path.join(self.path, self.class_name, "ground_truth")
-
+        self.aug = False
+        phase = "train" if self.is_train else "test"
+        self.img_dir = os.path.join(self.dataset_path, self.class_name, phase)
+        self.gt_dir = os.path.join(self.dataset_path, self.class_name, "ground_truth")
         # load dataset
-        self.x, self.y, self.mask = self.load_dataset()
-
+        self.x, self.y, self.mask, _ = self.load_dataset()
         # set transforms
         if is_train:
             self.transform_x = T.Compose(
-                [
-                    T.Resize(self.input_size, T.InterpolationMode.LANCZOS),
-                    T.ToTensor(),
-                ]
+                [T.Resize(self.input_size, InterpolationMode.LANCZOS), T.ToTensor()]
             )
+        # test:
         else:
             self.transform_x = T.Compose(
-                [
-                    T.Resize(self.input_size, T.InterpolationMode.LANCZOS),
-                    T.ToTensor(),
-                ]
+                [T.Resize(self.input_size, InterpolationMode.LANCZOS), T.ToTensor()]
             )
-            self.transform_mask = T.Compose(
-                [
-                    T.Resize(self.input_size, T.InterpolationMode.NEAREST),
-                    T.ToTensor(),
-                ]
-            )
-            self.normalize = T.Compose(
-                [T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])]
-            )
+        # mask
+        self.transform_mask = T.Compose(
+            [T.Resize(self.input_size, InterpolationMode.NEAREST), T.ToTensor()]
+        )
+
+        self.normalize = T.Compose(
+            [T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])]
+        )
 
     def __getitem__(self, idx):
         x, y, mask = self.x[idx], self.y[idx], self.mask[idx]
+        # x = Image.open(x).convert('RGB')
+        # if os.path.isfile(x):
         x = Image.open(x)
 
-        # handle grayscale imgs
-        if self.class_name in ["zipper", "screw", "grid"]:
-            x = np.expand_dims(np.array(x), axis=2)  # (H, W, C)
+        if self.class_name in ["zipper", "screw", "grid"]:  # handle greyscale classes
+            x = np.expand_dims(np.array(x), axis=2)
             x = np.concatenate([x, x, x], axis=2)
 
             x = Image.fromarray(x.astype("uint8")).convert("RGB")
-
+        #
         x = self.normalize(self.transform_x(x))
-
+        #
         if y == 0:
-            mask = torch.zeros(self.input_size)
+            mask = torch.zeros([1, *self.input_size])
         else:
             mask = Image.open(mask)
             mask = self.transform_mask(mask)
@@ -98,34 +117,54 @@ class MVTecDataset(Dataset):
         return len(self.x)
 
     def load_dataset(self):
-        img_paths = list()
-        gt_paths = list()
-        labels = list()
-        types = list()
+
+        img_tot_paths = list()
+        gt_tot_paths = list()
+        tot_labels = list()
+        tot_types = list()
 
         defect_types = os.listdir(self.img_dir)
 
         for defect_type in defect_types:
+            # if self.is_vis and defect_type == "good":
+            # continue
             if defect_type == "good":
-                img_paths.extend(
-                    glob.glob(os.path.join(self.img_dir, defect_type) + "/*")
-                )
-                gt_paths.extend([None] * len(img_paths))
-                labels.extend([0] * len(img_paths))
+                img_paths = glob.glob(os.path.join(self.img_dir, defect_type) + "/*")
+                img_tot_paths.extend(img_paths)
+                gt_tot_paths.extend([None] * len(img_paths))
+                tot_labels.extend([0] * len(img_paths))
             else:
-                img_paths.extend(
-                    glob.glob(os.path.join(self.img_dir, defect_type) + "/*")
-                )
+                img_paths = glob.glob(os.path.join(self.img_dir, defect_type) + "/*")
+                gt_paths = glob.glob(os.path.join(self.gt_dir, defect_type) + "/*")
                 img_paths.sort()
-
-                gt_paths.extend(
-                    glob.glob(os.path.join(self.gt_dir, defect_type) + "/*")
-                )
                 gt_paths.sort()
-                labels.extend([1] * len(img_paths))
+                img_tot_paths.extend(img_paths)
+                gt_tot_paths.extend(gt_paths)
+                tot_labels.extend([1] * len(img_paths))
 
-        assert len(img_paths) == len(
-            labels
+        assert len(img_tot_paths) == len(
+            tot_labels
         ), "Something wrong with test and ground truth pair!"
 
-        return img_paths, labels, gt_paths, types
+        return img_tot_paths, tot_labels, gt_tot_paths, tot_types
+
+
+def get_data_transforms(size, isize, mean_train=None, std_train=None):
+    mean_train = [0.485, 0.456, 0.406] if mean_train is None else mean_train
+    std_train = [0.229, 0.224, 0.225] if std_train is None else std_train
+    data_transforms = transforms.Compose(
+        [
+            transforms.Resize((size, size)),
+            transforms.ToTensor(),
+            transforms.CenterCrop(isize),
+            transforms.Normalize(mean=mean_train, std=std_train),
+        ]
+    )
+    gt_transforms = transforms.Compose(
+        [
+            transforms.Resize((size, size)),
+            transforms.CenterCrop(isize),
+            transforms.ToTensor(),
+        ]
+    )
+    return data_transforms, gt_transforms
