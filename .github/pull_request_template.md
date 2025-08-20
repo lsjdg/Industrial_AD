@@ -6,3 +6,5 @@
 
 ## Checklists
 - [ ] Merging to main from feat
+- [ ] Checked for errors
+- [ ] Code runs well
