@@ -380,22 +380,17 @@ class AttnBottleneck(nn.Module):
     ) -> None:
         super(AttnBottleneck, self).__init__()
         self.attention = attention
-        # print("Attention:",self.attention)
+
         if norm_layer is None:
             norm_layer = nn.BatchNorm2d
-        width = int(planes * (base_width / 64.0)) * groups  # 512
-        # Both self.conv2 and self.downsample layers downsample the input when stride != 1
+        width = int(planes * (base_width / 64.0)) * groups
+
         self.h = halve
-        # self.k = [3, 5, 7, 13]
-        # self.p = [1, 2, 3, 6]
         k = 7
         p = 3
 
-        # self.conv1 = conv1x1(inplanes, width)
-        # self.bn1 = norm_layer(width)
-        # self.conv2 = conv3x3(width, width, stride, groups, dilation)
         self.bn2 = norm_layer(width // halve)
-        self.conv3 = conv1x1(width, planes * self.expansion)  # TODO: default is width
+        self.conv3 = conv1x1(width, planes * self.expansion)
         self.bn3 = norm_layer(planes * self.expansion)
         self.relu = nn.ReLU(inplace=True)
 
@@ -414,9 +409,7 @@ class AttnBottleneck(nn.Module):
             padding=1,
             bias=False,
         )
-        # self.Deconv3x3 = DepthwiseSeparableConv(inplanes // 2, width // 2, k=3, s=stride, p=1)
         self.conv3x3_ = nn.Conv2d(width // 2, width // 2, 3, 1, 1, bias=False)
-        # self.Deconv3x3_ = DepthwiseSeparableConv(width // 2, width // 2, 3, 1, 1)
         self.conv7x7 = nn.Conv2d(
             inplanes // 2,
             width // 2,
@@ -497,26 +490,7 @@ class AttnBottleneck(nn.Module):
                 x_[-1], self.conv7x7, self.bn4, self.conv7x7_, self.bn6, self.relu
             )
 
-            # out1 = self.conv3x3(x_[0])
-            # out1 = self.bn2(out1)
-            # out1 = self.relu(out1)
-            # out1 = self.conv3x3_(out1)
-            # out1 = self.bn6(out1)
-
-            # out1 = self.relu(out1)
-
-            # out2 = self.conv7x7(x_[-1])
-            # out2 = self.bn4(out2)
-            # out2 = self.relu(out2)
-            # out2 = self.conv7x7_(out2)
-            # out2 = self.bn5(out2)
-
-            # out2 = self.relu(out2)
-
             out = torch.cat([out1, out2], dim=1)
-            # out = self.bn7(out)
-            # out = self.relu(out)
-
             out = self.conv3(out)
             out = self.bn3(out)
 
