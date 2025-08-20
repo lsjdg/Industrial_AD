@@ -37,7 +37,7 @@ def conv3x3(
         out_planes,
         kernel_size=3,
         stride=stride,
-        padding=dilation,
+        padding=dilation,  # good way to maintain input_size when stride=1
         groups=groups,
         bias=False,
         dilation=dilation,
@@ -112,11 +112,9 @@ class BasicBlock(nn.Module):
 
 
 class Bottleneck(nn.Module):
-    # Bottleneck in torchvision places the stride for downsampling at 3x3 convolution(self.conv2)
-    # while original implementation places the stride at the first 1x1 convolution(self.conv1)
-    # according to "Deep residual learning for image recognition"https://arxiv.org/abs/1512.03385.
-    # This variant is also known as ResNet V1.5 and improves accuracy according to
-    # https://ngc.nvidia.com/catalog/model-scripts/nvidia:resnet_50_v1_5_for_pytorch.
+    """
+    ResNet V1.5 bottleneck for deep structures (channel reduction by 1x1 --> 3x3 --> 1x1)
+    """
 
     expansion: int = 4
 
@@ -131,7 +129,7 @@ class Bottleneck(nn.Module):
         dilation: int = 1,
         norm_layer: Optional[Callable[..., nn.Module]] = None,
     ) -> None:
-        super(Bottleneck, self).__init__()
+        super().__init__()
         if norm_layer is None:
             norm_layer = nn.BatchNorm2d
         width = int(planes * (base_width / 64.0)) * groups
@@ -182,13 +180,22 @@ class ResNet(nn.Module):
         replace_stride_with_dilation: Optional[List[bool]] = None,
         norm_layer: Optional[Callable[..., nn.Module]] = None,
     ) -> None:
+        """
+        layers: number of blocks for each layer
+        block: type of block
+        num_classes: num of classes for classification
+        zero_init_residual: init BN layer of residual connection to 0
+        groups: group in_channels during conv. (ResNeXt)
+        width_per_group: Width of each group. Intermediate channel width in a bottleneck is `int(planes * (width_per_group / 64.0)) * groups`
+        norm_layer: type of layer to use as norm layer
+        """
         super(ResNet, self).__init__()
         if norm_layer is None:
             norm_layer = nn.BatchNorm2d
-        self._norm_layer = norm_layer
+        self._norm_layer = norm_layer  # instance attribute
         self.num_classes = num_classes
 
-        self.inplanes = 64
+        self.inplanes = 64  # A state variable to track the number of input channels for the next layer.
         self.dilation = 1
         if replace_stride_with_dilation is None:
             # each element in the tuple indicates if we should replace
@@ -197,7 +204,7 @@ class ResNet(nn.Module):
         if len(replace_stride_with_dilation) != 3:
             raise ValueError(
                 "replace_stride_with_dilation should be None "
-                "or a 3-element tuple, got {}".format(replace_stride_with_dilation)
+                f"or a 3-element tuple, got {replace_stride_with_dilation}"
             )
         self.groups = groups
         self.base_width = width_per_group
@@ -245,6 +252,18 @@ class ResNet(nn.Module):
         stride: int = 1,
         dilate: bool = False,
     ) -> nn.Sequential:
+        """
+        define each layer of ResNet backbone
+
+        [Params]
+        block: type of block
+        planes: num_channels of block
+        blocks: num of blocks
+        dilate: replace stride with dilation
+
+        [Return]
+        ResNet backbone
+        """
         norm_layer = self._norm_layer
         downsample = None
         previous_dilation = self.dilation
@@ -258,6 +277,7 @@ class ResNet(nn.Module):
             )
 
         layers = []
+        # transition block
         layers.append(
             block(
                 self.inplanes,
@@ -270,7 +290,9 @@ class ResNet(nn.Module):
                 norm_layer,
             )
         )
+        # out_channels of current layer is the inplanes of next layer
         self.inplanes = planes * block.expansion
+        # identity blocks
         for _ in range(1, blocks):
             layers.append(
                 block(
@@ -286,7 +308,9 @@ class ResNet(nn.Module):
         return nn.Sequential(*layers)
 
     def _forward_impl(self, x: Tensor) -> Tensor:
-        # See note [TorchScript super()]
+        """
+        return: output feature map of each layer
+        """
         x = self.conv1(x)
         x = self.bn1(x)
         x = self.relu(x)
@@ -295,10 +319,6 @@ class ResNet(nn.Module):
         feature_a = self.layer1(x)
         feature_b = self.layer2(feature_a)
         feature_c = self.layer3(feature_b)
-
-        # x = self.avgpool(feature_d)
-        # x = torch.flatten(x, 1)
-        # res_logit = self.fc(x)
 
         return [feature_a, feature_b, feature_c]
 
@@ -312,7 +332,7 @@ def _resnet(
     layers: List[int],
     pretrained: bool,
     progress: bool,
-    **kwargs: Any
+    **kwargs: Any,
 ) -> ResNet:
     model = ResNet(block, layers, **kwargs)
     if pretrained:
@@ -321,62 +341,20 @@ def _resnet(
     return model
 
 
-class AttnBasicBlock(nn.Module):
-    expansion: int = 1
-
-    def __init__(
-        self,
-        inplanes: int,
-        planes: int,
-        stride: int = 1,
-        downsample: Optional[nn.Module] = None,
-        groups: int = 1,
-        base_width: int = 64,
-        dilation: int = 1,
-        norm_layer: Optional[Callable[..., nn.Module]] = None,
-        attention: bool = True,
-    ) -> None:
-        super(AttnBasicBlock, self).__init__()
-        self.attention = attention
-        # print("Attention:", self.attention)
-        if norm_layer is None:
-            norm_layer = nn.BatchNorm2d
-        if groups != 1 or base_width != 64:
-            raise ValueError("BasicBlock only supports groups=1 and base_width=64")
-        if dilation > 1:
-            raise NotImplementedError("Dilation > 1 not supported in BasicBlock")
-        # Both self.conv1 and self.downsample layers downsample the input when stride != 1
-        self.conv1 = conv3x3(inplanes, planes, stride)
-        self.bn1 = norm_layer(planes)
-        self.relu = nn.ReLU(inplace=True)
-        self.conv2 = conv3x3(planes, planes)
-        self.bn2 = norm_layer(planes)
-        # self.cbam = GLEAM(planes, 16)
-        self.downsample = downsample
-        self.stride = stride
-
-    def forward(self, x: Tensor) -> Tensor:
-        # if self.attention:
-        #    x = self.cbam(x)
-        identity = x
-
-        out = self.conv1(x)
-        out = self.bn1(out)
-        out = self.relu(out)
-
-        out = self.conv2(out)
-        out = self.bn2(out)
-
-        if self.downsample is not None:
-            identity = self.downsample(x)
-
-        out += identity
-        out = self.relu(out)
-
-        return out
-
-
 class AttnBottleneck(nn.Module):
+    """
+    Multi-Branch bottleneck for MEM
+    (Input -> Split Channels -> Branch A (3x3) & Branch B (7x7) -> Concat -> 1x1 Conv -> Output)
+
+    [Params]
+    inplanes: in_channels
+    planes: intermediate channels of blocks
+    downsample: match dim for residual connection
+    groups: group in_channels during conv. (ResNeXt)
+    halve: 1 for single-branch, 2 for multi-branch
+    """
+
+    # out_channels = channels * expansion
     expansion: int = 4
 
     def __init__(
@@ -388,23 +366,20 @@ class AttnBottleneck(nn.Module):
         groups: int = 1,
         base_width: int = 64,
         norm_layer: Optional[Callable[..., nn.Module]] = None,
-        attention: bool = True,
-        halve=1,
+        halve=2,
     ) -> None:
         super().__init__()
-        self.attention = attention
         if norm_layer is None:
             norm_layer = nn.BatchNorm2d
-        width = int(planes * (base_width / 64.0)) * groups  # 512
-        # Both self.conv2 and self.downsample layers downsample the input when stride != 1
+        width = int(planes * (base_width / 64.0)) * groups
         self.h = halve
 
-        k = 7
-        p = 3
+        k = 7  # kernel size for lower branch
+        p = 3  # padding needed to match in/out dim
 
-        self.bn2 = norm_layer(width // halve)
+        self.bn2 = norm_layer(width // halve)  # bn layer for upper branch
         self.conv3 = conv1x1(width, planes * self.expansion)
-        self.bn3 = norm_layer(planes * self.expansion)
+        self.bn3 = norm_layer(planes * self.expansion)  # BN after the final 1x1 conv
         self.relu = nn.ReLU(inplace=True)
 
         self.downsample = downsample
@@ -422,9 +397,7 @@ class AttnBottleneck(nn.Module):
             padding=1,
             bias=False,
         )
-        # self.Deconv3x3 = DepthwiseSeparableConv(inplanes // 2, width // 2, k=3, s=stride, p=1)
         self.conv3x3_ = nn.Conv2d(width // 2, width // 2, 3, 1, 1, bias=False)
-        # self.Deconv3x3_ = DepthwiseSeparableConv(width // 2, width // 2, 3, 1, 1)
         self.conv7x7 = nn.Conv2d(
             inplanes // 2,
             width // 2,
@@ -436,6 +409,10 @@ class AttnBottleneck(nn.Module):
         self.conv7x7_ = nn.Conv2d(width // 2, width // 2, k, 1, p, bias=False)
 
     def get_same_kernel_bias(self):
+        """
+        [Return]
+        kernel weight after fusing conv and bn
+        """
         k1, b1 = fuse_bn(self.conv3x3, self.bn2)
         k2, b2 = fuse_bn(self.conv3x3_, self.bn6)
 
@@ -476,10 +453,6 @@ class AttnBottleneck(nn.Module):
 
             out = self.conv2(out)
             out = self.bn2(out)
-            out = self.relu(out)
-
-            out = self.conv3(out)
-            out = self.bn3(out)
 
         else:
 
@@ -495,34 +468,28 @@ class AttnBottleneck(nn.Module):
                 return out
 
             out1 = process_branch(
-                x_[0], self.conv3x3, self.bn2, self.conv3x3_, self.bn5, self.relu
+                x_[0],
+                self.conv3x3_1,
+                self.bn3x3_1,
+                self.conv3x3_2,
+                self.bn3x3_2,
+                self.relu,
             )
             out2 = process_branch(
-                x_[-1], self.conv7x7, self.bn4, self.conv7x7_, self.bn6, self.relu
+                x_[-1],
+                self.conv7x7_1,
+                self.bn7x7_1,
+                self.conv7x7_2,
+                self.bn7x7_2,
+                self.relu,
             )
 
-            # out1 = self.conv3x3(x_[0])
-            # out1 = self.bn2(out1)
-            # out1 = self.relu(out1)
-            # out1 = self.conv3x3_(out1)
-            # out1 = self.bn6(out1)
-
-            # out1 = self.relu(out1)
-
-            # out2 = self.conv7x7(x_[-1])
-            # out2 = self.bn4(out2)
-            # out2 = self.relu(out2)
-            # out2 = self.conv7x7_(out2)
-            # out2 = self.bn5(out2)
-
-            # out2 = self.relu(out2)
-
             out = torch.cat([out1, out2], dim=1)
-            # out = self.bn7(out)
-            # out = self.relu(out)
 
-            out = self.conv3(out)
-            out = self.bn3(out)
+        # Common path for both h=1 and h=2
+        out = self.relu(out)  # Apply ReLU before the final conv
+        out = self.conv3(out)
+        out = self.bn3(out)
 
         if self.downsample is not None:
             identity = self.downsample(x)
@@ -644,7 +611,7 @@ class BN_layer(nn.Module):
 
 def wide_resnet50_2(
     c, pretrained: bool = False, progress: bool = True, **kwargs: Any
-) -> ResNet:
+) -> tuple[ResNet, nn.Module]:
     r"""Wide ResNet-50-2 model from
     `"Wide Residual Networks" <https://arxiv.org/pdf/1605.07146.pdf>`_.
     The model is the same as ResNet except for the bottleneck number of channels
