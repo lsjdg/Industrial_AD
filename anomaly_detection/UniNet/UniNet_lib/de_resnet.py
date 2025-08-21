@@ -57,7 +57,7 @@ def conv1x1(in_planes: int, out_planes: int, stride: int = 1) -> nn.Conv2d:
 def deconv2x2(
     in_planes: int, out_planes: int, stride: int = 1, groups: int = 1, dilation: int = 1
 ) -> nn.Conv2d:
-    """1x1 convolution"""
+    """2x2 deconvolution"""
     return nn.ConvTranspose2d(
         in_planes,
         out_planes,
@@ -83,7 +83,7 @@ class BasicBlock(nn.Module):
         dilation: int = 1,
         norm_layer: Optional[Callable[..., nn.Module]] = None,
     ) -> None:
-        super(BasicBlock, self).__init__()
+        super().__init__()
         if norm_layer is None:
             norm_layer = nn.BatchNorm2d
         if groups != 1 or base_width != 64:
@@ -141,7 +141,7 @@ class Bottleneck(nn.Module):
         dilation: int = 1,
         norm_layer: Optional[Callable[..., nn.Module]] = None,
     ) -> None:
-        super(Bottleneck, self).__init__()
+        super().__init__()
         if norm_layer is None:
             norm_layer = nn.BatchNorm2d
         width = int(planes * (base_width / 64.0)) * groups
@@ -196,7 +196,7 @@ class ResNet(nn.Module):
         norm_layer: Optional[Callable[..., nn.Module]] = None,
         type: str = "s1",
     ) -> None:
-        super(ResNet, self).__init__()
+        super().__init__()
         self.type = type
         if norm_layer is None:
             norm_layer = nn.BatchNorm2d
@@ -215,11 +215,7 @@ class ResNet(nn.Module):
             )
         self.groups = groups
         self.base_width = width_per_group
-        # self.conv1 = nn.Conv2d(3, self.inplanes, kernel_size=7, stride=2, padding=3,
-        #                       bias=False)
-        # self.bn1 = norm_layer(self.inplanes)
-        # self.relu = nn.ReLU(inplace=True)
-        # self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
+
         self.layer1 = self._make_layer(block, 256, layers[0], stride=2)
         self.layer2 = self._make_layer(
             block, 128, layers[1], stride=2, dilate=replace_stride_with_dilation[0]
@@ -227,17 +223,8 @@ class ResNet(nn.Module):
         self.layer3 = self._make_layer(
             block, 64, layers[2], stride=2, dilate=replace_stride_with_dilation[1]
         )
-        # self.layer4 = self._make_layer(block, 32, layers[3], stride=2,
-        #                                dilate=replace_stride_with_dilation[2])
-        # self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
-        self.fc = nn.Linear(256, 1)
 
-        # self.moduleDeconv3 = self.Basic(256, 128)
-        # self.up2 = self.Upsample(128, 64)
-        # self.moduleDeconv2 = self.Basic(64, 64)
-        # self.up1 = self.Upsample(64,32)
-        # self.moduleDeconv1 = self.Basic(32, 32)
-        # self.generator = self.Generator(32, 3, 32)
+        self.fc = nn.Linear(256, 1)
 
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
@@ -255,37 +242,6 @@ class ResNet(nn.Module):
                     nn.init.constant_(m.bn3.weight, 0)  # type: ignore[arg-type]
                 elif isinstance(m, BasicBlock):
                     nn.init.constant_(m.bn2.weight, 0)  # type: ignore[arg-type]
-
-    # def Basic(self, intInput, intOutput):
-    #     return torch.nn.Sequential(
-    #         torch.nn.Conv2d(intInput, intOutput, kernel_size=3, padding=1),
-    #         torch.nn.BatchNorm2d(intOutput),
-    #         torch.nn.ReLU(inplace=True),
-    #         torch.nn.Conv2d(intOutput, intOutput, kernel_size=3, padding=1),
-    #         torch.nn.BatchNorm2d(intOutput),
-    #         torch.nn.ReLU(inplace=True)
-    #     )
-    #
-    # def Upsample(self, in_channels, out_channels):
-    #     return torch.nn.Sequential(
-    #         torch.nn.ConvTranspose2d(in_channels=in_channels, out_channels=out_channels,
-    #                                  kernel_size=3, stride=2, padding=1, output_padding=1, bias=False),
-    #         torch.nn.BatchNorm2d(out_channels),
-    #         torch.nn.ReLU(inplace=True)
-    #     )
-    #
-    # def Generator(self, intInput, intOutput, nc):
-    #     return torch.nn.Sequential(
-    #         torch.nn.Conv2d(in_channels=intInput, out_channels=nc, kernel_size=3, stride=1, padding=1, bias=False),
-    #         torch.nn.BatchNorm2d(nc),
-    #         torch.nn.ReLU(inplace=True),
-    #         torch.nn.Conv2d(in_channels=nc, out_channels=nc, kernel_size=3, stride=1, padding=1, bias=False),
-    #         torch.nn.BatchNorm2d(nc),
-    #         torch.nn.ReLU(inplace=True),
-    #         torch.nn.Conv2d(in_channels=nc, out_channels=intOutput, kernel_size=3, stride=1, padding=1),
-    #         # torch.nn.BatchNorm2d(intOutput),
-    #         # torch.nn.ReLU(inplace=True),
-    #     )
 
     def _make_layer(
         self,
@@ -336,39 +292,14 @@ class ResNet(nn.Module):
         return nn.Sequential(*layers)
 
     def _forward_impl(self, x: Tensor) -> Tensor:
-        # See note [TorchScript super()]
-        # x = self.conv1(x)
-        # x = self.bn1(x)
-        # x = self.relu(x)
-        # x = self.maxpool(x)
+
         b = x.size()[0] // 2
 
         feature_a = self.layer1(x)  # 1024*16*16
         feature_b = self.layer2(feature_a)  # 512*32*32
         feature_c = self.layer3(feature_b)  # 256*64*64
-        # feature_d = self.layer4(feature_c)  # 128*128*128
-
-        # x = self.avgpool(feature_c)
-        # x = torch.flatten(x, 1)
-        # out = self.fc(x).squeeze()
-        # out, out1 = torch.split(out, [b, b], dim=0)
-
-        # x = self.avgpool(feature_c_[1])
-        # x = torch.flatten(x, 1)
-        # out1 = self.fc(x)
 
         return [feature_c, feature_b, feature_a]  # , [torch.abs(out), torch.abs(out1)]
-
-        de_f3 = self.moduleDeconv3(feature_c)
-        up2 = self.up2(de_f3)
-
-        de_f2 = self.moduleDeconv2(up2)
-        up1 = self.up1(de_f2)
-
-        de_f1 = self.moduleDeconv1(up1)
-        out = self.generator(de_f1)
-
-        return [feature_c, feature_b, feature_a], out
 
     def forward(self, x: Tensor) -> Tensor:
         return self._forward_impl(x)
@@ -385,9 +316,6 @@ def _resnet(
     model = ResNet(block, layers, **kwargs)
     if pretrained:
         state_dict = load_state_dict_from_url(model_urls[arch], progress=progress)
-        # for k,v in list(state_dict.items()):
-        #    if 'layer4' in k or 'fc' in k:
-        #        state_dict.pop(k)
         model.load_state_dict(state_dict)
     return model
 
