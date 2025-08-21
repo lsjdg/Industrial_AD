@@ -26,7 +26,7 @@ from UniNet_lib.mechanism import weighted_decision_mechanism
 def evaluation_indusAD(c, model, dataloader, device):
     model.train_or_eval(type="eval")
     n = model.n
-    is_similarity = c.weighted_decision_mechanism
+
     gt_list_px = []
     gt_list_sp = []
     output_list = [list() for _ in range(n * 3)]
@@ -67,9 +67,11 @@ def evaluation_indusAD(c, model, dataloader, device):
         )
         auroc_sp = round(roc_auc_score(gt_label, anomaly_score) * 100, 1)
 
+        ap = round(average_precision_score(gt_label, anomaly_score) * 100, 1)
+
         pro = round(eval_seg_pro(gt_mask, anomaly_map), 1)
 
-    return auroc_px, auroc_sp, pro
+    return auroc_px, auroc_sp, pro, ap
 
 
 def evaluation_vad(c, model, dataloader, device):
