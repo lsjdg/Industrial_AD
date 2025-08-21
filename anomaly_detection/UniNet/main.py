@@ -45,6 +45,13 @@ def parsing_args():
         choices=["all", "texture", "object"],
         help="For MVTecAD, choose a class group to run.",
     )
+    parser.add_argument(
+        "--task",
+        default="ad",
+        type=str,
+        choices=["ad", "as"],
+        help="choose task between anomaly detection & segmentation.",
+    )
 
     parser.add_argument("--epochs", default=100, type=int, help="epochs.")
     parser.add_argument("--batch_size", default=8, type=int, help="batch sizes.")
@@ -166,7 +173,12 @@ if __name__ == "__main__":
                 )
                 c._class_ = i
                 print(f"testing class:{i}")
-                auroc_sp, auroc_px, aupro_px = test(c, suffix="BEST_P_PRO")
+
+                if c.task == "as":
+                    auroc_sp, auroc_px, aupro_px = test(c, suffix="BEST_P_PRO")
+                else:
+                    auroc_sp, auroc_px, aupro_px = test(c, suffix="BEST_I_ROC")
+
                 print("")
                 table_ls.append(
                     [
@@ -181,7 +193,7 @@ if __name__ == "__main__":
                 pixel_aupro_list.append(aupro_px)
                 results = tabulate(
                     table_ls,
-                    headers=["class", "image_auroc", "pixel_auroc", "pixel_aupro"],
+                    headers=["class", "I-AUROC", "P-AUROC", "PRO"],
                     tablefmt="pipe",
                 )
             table_ls.append(
@@ -194,7 +206,7 @@ if __name__ == "__main__":
             )
             results = tabulate(
                 table_ls,
-                headers=["class", "image_auroc", "pixel_auroc", "pixel_aupro"],
+                headers=["class", "I-AUROC", "P-AUROC", "PRO"],
                 tablefmt="pipe",
             )
             print(results)
