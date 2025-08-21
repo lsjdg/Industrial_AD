@@ -4,7 +4,7 @@ import os
 from train_unsupervisedAD import train
 from metadata import (
     unsupervised,
-    mvtec_list,
+    mvtec_dict,
     industrial,
 )
 import argparse
@@ -38,6 +38,14 @@ def parsing_args():
         ],
         help="choose experimental dataset.",
     )
+    parser.add_argument(
+        "--class_",
+        default="all",
+        type=str,
+        choices=["all", "texture", "object"],
+        help="For MVTecAD, choose a class group to run.",
+    )
+
     parser.add_argument("--epochs", default=100, type=int, help="epochs.")
     parser.add_argument("--batch_size", default=8, type=int, help="batch sizes.")
     parser.add_argument("--image_size", default=256, type=int, help="image size.")
@@ -100,13 +108,19 @@ if __name__ == "__main__":
         c.default = c.alpha = c.beta = c.gamma = "w/o"
 
     dataset_name = c.dataset
+    datset_class = c.class_
     logger = get_logger(dataset_name, os.path.join(c.save_dir, dataset_name))
 
     dataset = None
     if dataset_name in industrial:
         c.domain = "industrial"
         if dataset_name == "MVTecAD":
-            dataset = mvtec_list
+            if c.class_ == "all":
+                dataset = mvtec_dict["texture"] + mvtec_dict["object"]
+            elif c.class_ == "texture":
+                dataset = mvtec_dict["texture"]
+            elif c.class_ == "object":
+                dataset = mvtec_dict["object"]
 
     else:
         raise KeyError(f"Dataset '{dataset_name}' can not be found.")
@@ -139,9 +153,7 @@ if __name__ == "__main__":
                 if c.setting == "oc":
                     (
                         print(
-                            "training on {} dataset (separate-class)".format(
-                                dataset_name
-                            )
+                            f"training on {dataset_name} dataset for {datset_class} classes"
                         )
                         if idx == 0
                         else None
@@ -155,7 +167,9 @@ if __name__ == "__main__":
         if c.setting == "oc":
             for idx, i in enumerate(dataset):
                 (
-                    print(f"testing on {dataset_name} dataset (separate-class)")
+                    print(
+                        f"testing on {dataset_name} dataset for {datset_class} classes"
+                    )
                     if idx == 0
                     else None
                 )
