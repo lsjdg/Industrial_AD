@@ -291,7 +291,7 @@ class ResNet(nn.Module):
 
         return nn.Sequential(*layers)
 
-    def _forward_impl(self, x: Tensor) -> Tensor:
+    def _forward_impl(self, x: Tensor) -> List[Tensor]:
 
         b = x.size()[0] // 2
 

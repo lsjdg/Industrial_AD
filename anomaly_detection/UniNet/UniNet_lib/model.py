@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 from .Loss import losses
-import numpy as np
 
 
 class EarlyStopping:
@@ -22,7 +21,7 @@ class EarlyStopping:
             self.best_pro = current_pro
         elif current_pro < self.best_pro + self.delta:
             self.counter += 1
-            print(f'EarlyStopping counter: {self.counter}/{self.patience}')
+            print(f"EarlyStopping counter: {self.counter}/{self.patience}")
             if self.counter >= self.patience:
                 self.early_stop = True
         else:
@@ -33,12 +32,14 @@ class EarlyStopping:
     def save_checkpoint(self, pro):
         """保存当前最佳模型"""
         if self.verbose:
-            print(f'PRO increases ({self.pro_min:.1f} --> {pro:.1f}). Saving model...')
+            print(f"PRO increases ({self.pro_min:.1f} --> {pro:.1f}). Saving model...")
         self.pro_min = pro
 
 
 class UniNet(nn.Module):
-    def __init__(self, c, Source_teacher, Target_teacher, bottleneck, student, DFS=None):
+    def __init__(
+        self, c, Source_teacher, Target_teacher, bottleneck, student, DFS=None
+    ):
         super().__init__()
         self._class_ = c._class_
         self.T = c.T
@@ -48,7 +49,7 @@ class UniNet(nn.Module):
         self.s = Student(student=student)
         self.dfs = DFS
 
-    def train_or_eval(self, type='train'):
+    def train_or_eval(self, type="train"):
         self.type = type
         self.t.train_eval(type)
         self.bn.train_eval(type)
@@ -57,18 +58,23 @@ class UniNet(nn.Module):
         return self
 
     def feature_selection(self, b, a, max):
-        if self._class_ in ['transistor']:
+        if self._class_ in ["transistor"]:
             return a
 
         if self.dfs is not None:
             selected_features = self.dfs(a, b, learnable=True, conv=False, max=max)
         else:
             from .DFS import domain_related_feature_selection
+
             selected_features = domain_related_feature_selection(a, b, max=max)
         return selected_features
 
     def loss_computation(self, b, a, margin=1, mask=None, stop_gradient=False):
-        T = 0.1 if self._class_ in ['transistor', 'pill', 'cable', 'bottle', "grid", 'foam'] else self.T
+        T = (
+            0.1
+            if self._class_ in ["transistor", "pill", "cable", "bottle", "grid", "foam"]
+            else self.T
+        )
         loss = losses(b, a, T, margin, mask=mask, stop_gradient=stop_gradient)
 
         return loss
@@ -79,12 +85,20 @@ class UniNet(nn.Module):
         stu_features = self.s(bnsout)
 
         stu_features = [d.chunk(dim=0, chunks=2) for d in stu_features]
-        stu_features = [stu_features[0][0], stu_features[1][0], stu_features[2][0],
-                        stu_features[0][1], stu_features[1][1], stu_features[2][1]]
+        stu_features = [
+            stu_features[0][0],
+            stu_features[1][0],
+            stu_features[2][0],
+            stu_features[0][1],
+            stu_features[1][1],
+            stu_features[2][1],
+        ]
 
-        if self.type == 'train':
+        if self.type == "train":
             stu_features_ = self.feature_selection(Sou_Tar_features, stu_features, max)
-            loss = self.loss_computation(Sou_Tar_features, stu_features_, mask=mask, stop_gradient=stop_gradient)
+            loss = self.loss_computation(
+                Sou_Tar_features, stu_features_, mask=mask, stop_gradient=stop_gradient
+            )
 
             return loss
         else:
@@ -97,7 +111,7 @@ class Teachers(nn.Module):
         self.t_s = Source_teacher
         self.t_t = Target_teacher
 
-    def train_eval(self, type='train'):
+    def train_eval(self, type="train"):
         self.type = type
         self.t_s.eval()
         if self.t_t is not None:
@@ -116,7 +130,9 @@ class Teachers(nn.Module):
             return Sou_features
         else:
             Tar_features = self.t_t(x)
-            bnins = [torch.cat([a, b], dim=0) for a, b in zip(Tar_features, Sou_features)]  # 512, 1024, 2048
+            bnins = [
+                torch.cat([a, b], dim=0) for a, b in zip(Tar_features, Sou_features)
+            ]  # 512, 1024, 2048
 
             return Sou_features + Tar_features, bnins
 
@@ -126,8 +142,8 @@ class BN(nn.Module):
         super().__init__()
         self.bn = bottleneck
 
-    def train_eval(self, type='train'):
-        if type == 'train':
+    def train_eval(self, type="train"):
+        if type == "train":
             self.bn.train()
         else:
             self.bn.eval()
@@ -145,8 +161,8 @@ class Student(nn.Module):
         super().__init__()
         self.s1 = student
 
-    def train_eval(self, type='train'):
-        if type == 'train':
+    def train_eval(self, type="train"):
+        if type == "train":
             self.s1.train()
         else:
             self.s1.eval()

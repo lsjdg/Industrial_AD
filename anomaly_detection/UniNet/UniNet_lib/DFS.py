@@ -6,30 +6,24 @@ import torch.nn.functional as F
 class DomainRelated_Feature_Selection(nn.Module):
     def __init__(self, num_channels=256):
         super(DomainRelated_Feature_Selection, self).__init__()
-        self.num_channels = num_channels  # the first layer
-        #  initialize to 0
-        self.theta1 = nn.Parameter(torch.zeros(1, num_channels, 1, 1)).to("cuda")
-        self.theta2 = nn.Parameter(torch.zeros(1, num_channels * 2, 1, 1)).to("cuda")
-        self.theta3 = nn.Parameter(torch.zeros(1, num_channels * 4, 1, 1)).to("cuda")
+        # Use ParameterList for safer and clearer parameter management
+        self.thetas = nn.ParameterList(
+            [
+                nn.Parameter(torch.zeros(1, num_channels, 1, 1)),
+                nn.Parameter(torch.zeros(1, num_channels * 2, 1, 1)),
+                nn.Parameter(torch.zeros(1, num_channels * 4, 1, 1)),
+            ]
+        )
 
     def forward(self, xs, priors, learnable=True, conv=False, max=True):
         features = []
         for idx, (x, prior) in enumerate(zip(xs, priors)):
             theta = 1
             if learnable:
-                #  to avoid losing local weight, theta should be as non-zero value as possible
                 if idx < 3:
-                    #
-                    theta = torch.clamp(
-                        torch.sigmoid(eval("self.theta{}".format((idx + 1)))) * 1.0
-                        + 0.5,
-                        max=1,
-                    )
-                else:
-                    theta = torch.clamp(
-                        torch.sigmoid(eval("self.theta{}".format(idx - 2))) * 1.0 + 0.5,
-                        max=1,
-                    )
+                    # Access parameters safely from the list
+                    current_theta = self.thetas[idx]
+                    theta = torch.clamp(torch.sigmoid(current_theta) * 1.0 + 0.5, max=1)
 
             b, c, h, w = x.shape
             if not conv:
