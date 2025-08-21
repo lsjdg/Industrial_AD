@@ -1,6 +1,4 @@
-import glob
 import math
-import os
 import re
 import time
 import torch
@@ -16,10 +14,6 @@ from sklearn.metrics import (
 )
 
 from sklearn.metrics import auc
-
-
-from sklearn import metrics
-
 
 from utils import t2np, rescale
 from functools import partial
@@ -64,10 +58,6 @@ def evaluation_indusAD(c, model, dataloader, device):
         anomaly_score, anomaly_map = weighted_decision_mechanism(
             weights_cnt, output_list, c.alpha, c.beta
         )
-        # anomaly_score = gaussian_filter(anomaly_score, sigma=4) if is_similarity else \
-        #     [np.max(gaussian_filter(anomaly_score, sigma=4)[i, :, :, :].numpy()) for i in range(anomaly_score.shape[0])]
-
-        # anomaly_score_add = gaussian_filter(anomaly_score_add, sigma=4)
 
         gt_label = np.asarray(gt_list_sp, dtype=np.bool_)
         gt_mask = np.squeeze(np.asarray(gt_list_px, dtype=np.bool_), axis=1)

@@ -7,7 +7,8 @@ from UniNet_lib.DFS import DomainRelated_Feature_Selection
 from eval import evaluation_indusAD, evaluation_batch, evaluation_vad
 from UniNet_lib.resnet import wide_resnet50_2
 from utils import load_weights, to_device
-from datasets import loading_dataset, unsupervised
+from datasets import loading_dataset
+from metadata import unsupervised
 
 
 def test(c, stu_type="un_cls", suffix="BEST_P_PRO"):

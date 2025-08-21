@@ -1,15 +1,10 @@
-import logging
 import os
 import random
 from os.path import join
 
 import numpy as np
 import torch
-from matplotlib import pyplot as plt
-from torch import nn
-import torch.nn.functional as F
 import tifffile as tiff
-from functools import partial
 
 
 def to_device(all_models, device):
@@ -66,30 +61,13 @@ def load_weights(modules_list: list, ckpt_path, suffix):
     for module, (key, value) in zip(modules_list, new_state.items()):
         if module is None:
             continue
+
         module.load_state_dict(state_dict[str(key)])
         module.eval()
         module.cuda()
         new_state[str(key)] = module
 
     return new_state  # dict{TeacherTwo, bn, decoder}
-
-
-def get_logger(name, save_path=None, level="INFO"):
-    logger = logging.getLogger(name)
-    logger.setLevel(getattr(logging, level))
-
-    log_format = logging.Formatter("%(message)s")
-    streamHandler = logging.StreamHandler()
-    streamHandler.setFormatter(log_format)
-    logger.addHandler(streamHandler)
-
-    if not save_path is None:
-        os.makedirs(save_path, exist_ok=True)
-        fileHandler = logging.FileHandler(os.path.join(save_path, "log.txt"))
-        fileHandler.setFormatter(log_format)
-        logger.addHandler(fileHandler)
-
-    return logger
 
 
 class utils_3D:

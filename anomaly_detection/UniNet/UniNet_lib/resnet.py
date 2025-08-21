@@ -49,7 +49,7 @@ def conv1x1(in_planes: int, out_planes: int, stride: int = 1) -> nn.Conv2d:
     return nn.Conv2d(in_planes, out_planes, kernel_size=1, stride=stride, bias=False)
 
 
-def fuse_bn(conv, bn):
+def fuse_bn(conv: nn.Conv2d, bn: nn.BatchNorm2d) -> tuple[Tensor, Tensor]:
     kernel = conv.weight
     running_mean = bn.running_mean
     running_var = bn.running_var
@@ -306,7 +306,7 @@ class ResNet(nn.Module):
 
         return nn.Sequential(*layers)
 
-    def _forward_impl(self, x: Tensor) -> Tensor:
+    def _forward_impl(self, x: Tensor) -> List[Tensor]:
         # See note [TorchScript super()]
         x = self.conv1(x)
         x = self.bn1(x)
@@ -323,7 +323,7 @@ class ResNet(nn.Module):
 
         return [feature_a, feature_b, feature_c]
 
-    def forward(self, x: Tensor) -> Tensor:
+    def forward(self, x: Tensor) -> List[Tensor]:
         return self._forward_impl(x)
 
 

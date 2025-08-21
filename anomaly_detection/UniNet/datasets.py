@@ -17,31 +17,6 @@ warnings.filterwarnings(
 
 BTAD_PATH = os.path.abspath(os.path.join("D:\ws/btad"))
 
-industrial = [
-    "MVTecAD",
-]
-unsupervised = [
-    "MVTecAD",
-]
-
-mvtec_list = [
-    "carpet",
-    "bottle",
-    "hazelnut",
-    "leather",
-    "cable",
-    "capsule",
-    "grid",
-    "pill",
-    "transistor",
-    "metal_nut",
-    "screw",
-    "toothbrush",
-    "zipper",
-    "tile",
-    "wood",
-]
-
 
 def loading_dataset(c, dataset_name):
     train_dataloader, test_dataloader = None, None
