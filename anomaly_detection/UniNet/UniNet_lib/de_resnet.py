@@ -301,7 +301,7 @@ class ResNet(nn.Module):
 
         return [feature_c, feature_b, feature_a]  # , [torch.abs(out), torch.abs(out1)]
 
-    def forward(self, x: Tensor) -> Tensor:
+    def forward(self, x: Tensor) -> List[Tensor]:
         return self._forward_impl(x)
 
 
