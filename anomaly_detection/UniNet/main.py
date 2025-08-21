@@ -177,7 +177,7 @@ if __name__ == "__main__":
                 if c.task == "as":
                     auroc_sp, auroc_px, aupro_px = test(c, suffix="BEST_P_PRO")
                 else:
-                    auroc_sp, auroc_px, aupro_px = test(c, suffix="BEST_I_ROC")
+                    auroc_sp, auroc_px, aupro_px = test(c, suffix="BEST_P_PRO")
 
                 print("")
                 table_ls.append(
