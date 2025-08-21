@@ -8,7 +8,7 @@ from metadata import (
     industrial,
 )
 import argparse
-from utils import setup_seed, get_logger
+from utils import setup_seed
 from test import test
 
 
@@ -39,7 +39,7 @@ def parsing_args():
         help="choose experimental dataset.",
     )
     parser.add_argument(
-        "--class_",
+        "--class_group",
         default="all",
         type=str,
         choices=["all", "texture", "object"],
@@ -77,12 +77,6 @@ def parsing_args():
     )
 
     parser.add_argument(
-        "--train_and_test_all",
-        action="store_true",
-        default=False,
-        help="for medical domains.",
-    )
-    parser.add_argument(
         "--is_saved",
         action="store_true",
         default=True,
@@ -108,19 +102,16 @@ if __name__ == "__main__":
         c.default = c.alpha = c.beta = c.gamma = "w/o"
 
     dataset_name = c.dataset
-    datset_class = c.class_
-    logger = get_logger(dataset_name, os.path.join(c.save_dir, dataset_name))
+    dataset_class_group = c.class_group
 
     dataset = None
     if dataset_name in industrial:
         c.domain = "industrial"
         if dataset_name == "MVTecAD":
-            if c.class_ == "all":
+            if c.class_group == "all":
                 dataset = mvtec_dict["texture"] + mvtec_dict["object"]
-            elif c.class_ == "texture":
-                dataset = mvtec_dict["texture"]
-            elif c.class_ == "object":
-                dataset = mvtec_dict["object"]
+            else:
+                dataset = mvtec_dict[c.class_group]
 
     else:
         raise KeyError(f"Dataset '{dataset_name}' can not be found.")
@@ -153,7 +144,7 @@ if __name__ == "__main__":
                 if c.setting == "oc":
                     (
                         print(
-                            f"training on {dataset_name} dataset for {datset_class} classes"
+                            f"training on {dataset_name} dataset for {dataset_class_group} classes"
                         )
                         if idx == 0
                         else None
@@ -168,7 +159,7 @@ if __name__ == "__main__":
             for idx, i in enumerate(dataset):
                 (
                     print(
-                        f"testing on {dataset_name} dataset for {datset_class} classes"
+                        f"testing on {dataset_name} dataset for {dataset_class_group} classes"
                     )
                     if idx == 0
                     else None
@@ -190,7 +181,7 @@ if __name__ == "__main__":
                 pixel_aupro_list.append(aupro_px)
                 results = tabulate(
                     table_ls,
-                    headers=["object", "image_auroc", "pixel_auroc", "pixel_aupro"],
+                    headers=["class", "image_auroc", "pixel_auroc", "pixel_aupro"],
                     tablefmt="pipe",
                 )
             table_ls.append(
@@ -203,7 +194,17 @@ if __name__ == "__main__":
             )
             results = tabulate(
                 table_ls,
-                headers=["object", "image_auroc", "pixel_auroc", "pixel_aupro"],
+                headers=["class", "image_auroc", "pixel_auroc", "pixel_aupro"],
                 tablefmt="pipe",
             )
             print(results)
+
+            # Save results to a file
+            result_path = os.path.join(c.save_dir, c.dataset)
+            os.makedirs(result_path, exist_ok=True)
+            result_file_path = os.path.join(result_path, f"{c.class_group}.txt")
+            with open(result_file_path, "w") as f:
+                f.write(
+                    f"Results for dataset: {c.dataset}, class group: {c.class_group}\n\n"
+                )
+                f.write(results)
