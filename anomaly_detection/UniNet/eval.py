@@ -1,6 +1,4 @@
-import glob
 import math
-import os
 import re
 import time
 import torch
@@ -16,10 +14,6 @@ from sklearn.metrics import (
 )
 
 from sklearn.metrics import auc
-
-
-from sklearn import metrics
-
 
 from utils import t2np, rescale
 from functools import partial

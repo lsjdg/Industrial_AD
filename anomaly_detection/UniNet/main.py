@@ -2,7 +2,7 @@ import numpy as np
 import os
 
 from train_unsupervisedAD import train
-from datasets import (
+from metadata import (
     unsupervised,
     mvtec_list,
     industrial,
