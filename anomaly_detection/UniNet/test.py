@@ -22,7 +22,7 @@ def test(c, stu_type="un_cls", suffix="BEST_P_PRO"):
         if c.setting == "oc":
             ckpt_path = os.path.join("./ckpts", dataset_name, f"{c._class_}")
         elif c.setting == "mc":
-            ckpt_path = os.path.join("./ckpts", "{}".format(dataset_name), "multiclass")
+            ckpt_path = os.path.join("./ckpts", f"{dataset_name}", "multiclass")
         else:
             pass
 
@@ -32,6 +32,7 @@ def test(c, stu_type="un_cls", suffix="BEST_P_PRO"):
 
     # ---------------------------------------loading model-------------------------------------------
     Source_teacher, bn = wide_resnet50_2(c, pretrained=True)
+    # use first three layers
     Source_teacher.layer4 = None
     Source_teacher.fc = None
 
@@ -69,6 +70,9 @@ def test(c, stu_type="un_cls", suffix="BEST_P_PRO"):
                 auroc_px, auroc_sp, pro = evaluation_indusAD(
                     c, model, test_dataloader, device
                 )
+                # add anomlay map vis here
+                # edit evaluation_indusAD to return am and gt
+
                 return auroc_sp, auroc_px, pro
             else:
                 auroc_sp, f1, acc = evaluation_vad(c, model, test_dataloader, device)
