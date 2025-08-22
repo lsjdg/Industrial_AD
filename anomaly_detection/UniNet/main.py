@@ -220,32 +220,3 @@ if __name__ == "__main__":
             )
             results = tabulate(table_ls, headers=headers, tablefmt="pipe")
             print(results)
-
-            # settings
-            param_grid = {
-                "epochs": c.epochs,
-                "batch_size": c.batch_size,
-                "image_size": c.image_size,
-                "center_crop": c.center_crop,
-                "lr_s": c.lr_s,
-                "lr_t": c.lr_t,
-                "T": c.T,
-            }
-
-            # Save results to a file
-            if c.task == "as":
-                task_name = "segmentation"
-            else:
-                task_name = "detection"
-
-            result_path = os.path.join(c.save_dir, c.dataset, task_name)
-            os.makedirs(result_path, exist_ok=True)
-            result_file_path = os.path.join(result_path, f"{c.class_group}.txt")
-            with open(result_file_path, "w") as f:
-                f.write(
-                    f"Results for dataset: {c.dataset}, class group: {c.class_group}, task: {task_name}\n\n"
-                )
-                f.write(results)
-
-                f.write(f"\n\nParameters:\n\n")
-                f.write(str(param_grid))

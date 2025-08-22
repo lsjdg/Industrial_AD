@@ -2,6 +2,7 @@ import numpy as np
 import torch
 from torch.nn import functional as F
 from scipy.ndimage import gaussian_filter
+from vis import *
 
 """Aggregates anomaly maps from multiple feature levels to compute a final anomaly map and score.
 
@@ -68,6 +69,12 @@ def weighted_decision_mechanism(num, output_list, alpha, beta, out_size=256):
         ]  # B*256*256
 
     anomaly_map = sum(am_lists)
+    print(anomaly_map.shape)
+    print()
+    i = 0
+    for map in anomaly_map:
+        visualize_anomaly_map(map, save_path=f"../../../maps/{i}.png", show=False)
+        i += 1
 
     anomaly_score_exp = anomaly_map
     batch = anomaly_score_exp.shape[0]
