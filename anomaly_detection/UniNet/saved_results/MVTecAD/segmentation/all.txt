@@ -18,3 +18,15 @@ Results for dataset: MVTecAD, class group: all
 | transistor |         97.5  |         94.8  |
 | zipper     |         98.7  |         95.6  |
 | mean       |         98.63 |         95.76 |
+
+Parameters:
+
+{
+    "epochs": 100,
+    "batch_size": 8,
+    "image_size": 256,
+    "center_crop": 256,
+    "lr_s": 5e-3,
+    "lr_t": 1e-6,
+    "T": 2,
+}
