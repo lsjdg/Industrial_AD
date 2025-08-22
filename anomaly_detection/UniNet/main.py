@@ -10,6 +10,7 @@ from metadata import (
 import argparse
 from utils import setup_seed
 from test import test
+from visualization import save_anomaly_visualization
 
 
 def parsing_args():
@@ -183,9 +184,9 @@ if __name__ == "__main__":
                 # For AS, test with the model best at segmentation (P-PRO)
                 # For AD, test with the model best at detection (I-ROC)
                 if c.task == "as":
-                    auroc_sp, auroc_px, aupro_px, ap = test(c, suffix="BEST_P_PRO")
+                    auroc_sp, auroc_px, aupro_px, ap, am = test(c, suffix="BEST_P_PRO")
                 else:
-                    auroc_sp, auroc_px, aupro_px, ap = test(c, suffix="BEST_I_ROC")
+                    auroc_sp, auroc_px, aupro_px, ap, am = test(c, suffix="BEST_I_ROC")
 
                 print("")
 
@@ -248,4 +249,4 @@ if __name__ == "__main__":
                 f.write(results)
 
                 f.write(f"\n\nParameters:\n\n")
-                f.write(param_grid)
+                f.write(str(param_grid))
