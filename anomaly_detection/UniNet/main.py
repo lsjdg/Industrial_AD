@@ -132,10 +132,6 @@ if __name__ == "__main__":
     # --------------------------------------unsupervised industrial AD-----------------------------------------
     # ---------------------------------------------------------------------------------------------------------
     if dataset_name in industrial and dataset_name in unsupervised:
-        image_auroc_list = []
-        pixel_auroc_list = []
-        pixel_aupro_list = []
-
         # -----------------------------train-------------------------------------
         if not c.load_ckpts:
             for idx, i in enumerate(dataset):
@@ -163,6 +159,16 @@ if __name__ == "__main__":
 
         # -----------------------------test-------------------------------------
         if c.setting == "oc":
+            # Initialize lists and headers based on task
+            if c.task == "ad":
+                headers = ["class", "I-AUROC", "AP"]
+                metric_list_1 = []  # I-AUROC
+                metric_list_2 = []  # AP
+            else:  # c.task == 'as'
+                headers = ["class", "P-AUROC", "PRO"]
+                metric_list_1 = []  # P-AUROC
+                metric_list_2 = []  # PRO
+
             for idx, i in enumerate(dataset):
                 (
                     print(
@@ -174,45 +180,54 @@ if __name__ == "__main__":
                 c._class_ = i
                 print(f"testing class:{i}")
 
+                # For AS, test with the model best at segmentation (P-PRO)
+                # For AD, test with the model best at detection (I-ROC)
                 if c.task == "as":
-                    auroc_sp, auroc_px, aupro_px = test(c, suffix="BEST_P_PRO")
+                    auroc_sp, auroc_px, aupro_px, ap = test(c, suffix="BEST_P_PRO")
                 else:
-                    auroc_sp, auroc_px, aupro_px = test(c, suffix="BEST_P_PRO")
+                    auroc_sp, auroc_px, aupro_px, ap = test(c, suffix="BEST_I_ROC")
 
                 print("")
-                table_ls.append(
-                    [
-                        "{}".format(i),
-                        str(np.round(auroc_sp, decimals=1)),
-                        str(np.round(auroc_px, decimals=1)),
-                        str(np.round(aupro_px, decimals=1)),
+
+                # Append results based on task
+                if c.task == "ad":
+                    row = [
+                        f"{i}",
+                        f"{auroc_sp:.1f}",
+                        f"{ap:.1f}",
                     ]
-                )
-                image_auroc_list.append(auroc_sp)
-                pixel_auroc_list.append(auroc_px)
-                pixel_aupro_list.append(aupro_px)
-                results = tabulate(
-                    table_ls,
-                    headers=["class", "I-AUROC", "P-AUROC", "PRO"],
-                    tablefmt="pipe",
-                )
+                    metric_list_1.append(auroc_sp)
+                    metric_list_2.append(ap)
+                else:  # c.task == 'as'
+                    row = [
+                        f"{i}",
+                        f"{auroc_px:.1f}",
+                        f"{aupro_px:.1f}",
+                    ]
+                    metric_list_1.append(auroc_px)
+                    metric_list_2.append(aupro_px)
+
+                table_ls.append(row)
+                results = tabulate(table_ls, headers=headers, tablefmt="pipe")
+
+            # Append mean values
             table_ls.append(
                 [
                     "mean",
-                    str(np.round(np.mean(image_auroc_list), decimals=2)),
-                    str(np.round(np.mean(pixel_auroc_list), decimals=2)),
-                    str(np.round(np.mean(pixel_aupro_list), decimals=2)),
+                    f"{np.mean(metric_list_1):.2f}",
+                    f"{np.mean(metric_list_2):.2f}",
                 ]
             )
-            results = tabulate(
-                table_ls,
-                headers=["class", "I-AUROC", "P-AUROC", "PRO"],
-                tablefmt="pipe",
-            )
+            results = tabulate(table_ls, headers=headers, tablefmt="pipe")
             print(results)
 
             # Save results to a file
-            result_path = os.path.join(c.save_dir, c.dataset)
+            if c.task == "as":
+                task_name = "segmentation"
+            else:
+                task_name = "detection"
+
+            result_path = os.path.join(c.save_dir, c.dataset, task_name)
             os.makedirs(result_path, exist_ok=True)
             result_file_path = os.path.join(result_path, f"{c.class_group}.txt")
             with open(result_file_path, "w") as f:

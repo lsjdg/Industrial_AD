@@ -1,20 +1,20 @@
 Results for dataset: MVTecAD, class group: all
 
-| class      |   image_auroc |   pixel_auroc |   pixel_aupro |
-|:-----------|--------------:|--------------:|--------------:|
-| carpet     |        100    |         99.1  |         97.2  |
-| grid       |         99.3  |         99.3  |         97.9  |
-| leather    |        100    |         99.5  |         98.4  |
-| tile       |         99.7  |         97.3  |         90.9  |
-| wood       |         99.6  |         96.7  |         94.5  |
-| bottle     |        100    |         98.9  |         96.5  |
-| cable      |         99.8  |         98.5  |         94.4  |
-| capsule    |         98.9  |         99.1  |         94.8  |
-| hazelnut   |        100    |         98.9  |         96.7  |
-| metal_nut  |        100    |         98.7  |         96.4  |
-| pill       |         98.1  |         98.6  |         97    |
-| screw      |         94    |         99.5  |         97.8  |
-| toothbrush |         97.5  |         99.1  |         93.5  |
-| transistor |        100    |         97.5  |         94.8  |
-| zipper     |         95.4  |         98.7  |         95.6  |
-| mean       |         98.82 |         98.63 |         95.76 |
+| class      |   P-AUROC     |   PRO         |
+|:-----------|--------------:|--------------:|
+| carpet     |         99.1  |         97.2  |
+| grid       |         99.3  |         97.9  |
+| leather    |         99.5  |         98.4  |
+| tile       |         97.3  |         90.9  |
+| wood       |         96.7  |         94.5  |
+| bottle     |         98.9  |         96.5  |
+| cable      |         98.5  |         94.4  |
+| capsule    |         99.1  |         94.8  |
+| hazelnut   |         98.9  |         96.7  |
+| metal_nut  |         98.7  |         96.4  |
+| pill       |         98.6  |         97    |
+| screw      |         99.5  |         97.8  |
+| toothbrush |         99.1  |         93.5  |
+| transistor |         97.5  |         94.8  |
+| zipper     |         98.7  |         95.6  |
+| mean       |         98.63 |         95.76 |

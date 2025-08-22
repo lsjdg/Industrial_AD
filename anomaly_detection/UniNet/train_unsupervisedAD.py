@@ -52,7 +52,9 @@ def train(c):
     # total_params = count_parameters(model)
     # print("Number of parameter: %.2fM" % (total_params/1e6))
 
-    auroc_sp, auroc_px, aupro_px, max_IRoc, max_PRoc, max_PPro = (
+    auroc_sp, auroc_px, aupro_px, ap, max_IRoc, max_PRoc, max_PPro, max_AP = (
+        0.0,
+        0.0,
         0.0,
         0.0,
         0.0,
@@ -100,35 +102,45 @@ def train(c):
 
             if dataset_name in ["MVTecAD", "BTAD", "MVTec 3D-AD", "VisA"]:
                 # evaluation
-                auroc_px, auroc_sp, aupro_px = evaluation_indusAD(
+                auroc_px, auroc_sp, aupro_px, ap = evaluation_indusAD(
                     c, model, test_dataloader, device
                 )
                 print(
-                    "Sample Auroc: {:.1f}, Pixel Auroc: {:.1f}, Pixel Aupro: {:.1f}".format(
-                        auroc_sp, auroc_px, aupro_px
+                    "Sample Auroc: {:.1f}, AP: {:.1f}, Pixel Auroc: {:.1f}, Pixel Aupro: {:.1f}".format(
+                        auroc_sp, ap, auroc_px, aupro_px
                     )
                 )
+
+                # Track all max values for logging
                 if max_IRoc < auroc_sp:
                     max_IRoc = auroc_sp
-                    # save_weights(modules_list, ckpt_path, "BEST_I_ROC") if c.is_saved else None
-                    best_iroc = True
+                if max_AP < ap:
+                    max_AP = ap
                 if max_PRoc < auroc_px:
                     max_PRoc = auroc_px
-                    (
-                        save_weights(modules_list, ckpt_path, "BEST_P_ROC")
-                        if c.is_saved
-                        else None
-                    )
-                if (best_iroc and max_PPro == aupro_px) or max_PPro < aupro_px:
+                if max_PPro < aupro_px:
                     max_PPro = aupro_px
-                    print("saved")
-                    (
-                        save_weights(modules_list, ckpt_path, "BEST_P_PRO")
-                        if c.is_saved
-                        else None
-                    )
+
+                # Save model based on task
+                if c.task == "ad":
+                    if auroc_sp >= max_IRoc:
+                        print("saved BEST_I_ROC")
+                        (
+                            save_weights(modules_list, ckpt_path, "BEST_I_ROC")
+                            if c.is_saved
+                            else None
+                        )
+                elif c.task == "as":
+                    if aupro_px >= max_PPro:
+                        print("saved BEST_P_PRO")
+                        (
+                            save_weights(modules_list, ckpt_path, "BEST_P_PRO")
+                            if c.is_saved
+                            else None
+                        )
+
                 print(
-                    f"MAX I_ROC: {max_IRoc:.1f}, MAX P_ROC: {max_PRoc:.1f}, MAX P_PRO: {max_PPro:.1f}"
+                    f"MAX I_ROC: {max_IRoc:.1f}, MAX AP: {max_AP:.1f}, MAX P_ROC: {max_PRoc:.1f}, MAX P_PRO: {max_PPro:.1f}"
                 )
                 early_stopping(aupro_px)
                 if early_stopping.early_stop:
