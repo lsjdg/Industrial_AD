@@ -1,10 +1,10 @@
 Results for dataset: MVTecAD, class group: texture
 
-| class   |   image_auroc |   pixel_auroc |   pixel_aupro |
-|:--------|--------------:|--------------:|--------------:|
-| carpet  |        100    |         99.1  |         97.2  |
-| grid    |         99.3  |         99.3  |         97.9  |
-| leather |        100    |         99.5  |         98.4  |
-| tile    |         99.7  |         97.3  |         90.9  |
-| wood    |         99.6  |         96.7  |         94.5  |
-| mean    |         99.72 |         98.38 |         95.78 |
+| class   |   P-AUROC |   PRO |
+|:--------|----------:|------:|
+| carpet  |     99.1  | 97.2  |
+| grid    |     99.3  | 97.9  |
+| leather |     99.5  | 98.4  |
+| tile    |     97.3  | 90.9  |
+| wood    |     96.7  | 94.5  |
+| mean    |     98.38 | 95.78 |

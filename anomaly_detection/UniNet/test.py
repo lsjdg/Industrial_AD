@@ -68,13 +68,11 @@ def test(c, stu_type="un_cls", suffix="BEST_P_PRO"):
     if c.domain == "industrial":
         if c.setting == "oc":
             if dataset_name in unsupervised:
-                auroc_px, auroc_sp, pro = evaluation_indusAD(
+                auroc_px, auroc_sp, pro, ap = evaluation_indusAD(
                     c, model, test_dataloader, device
                 )
-                # add anomlay map vis here
-                # edit evaluation_indusAD to return am and gt
 
-                return auroc_sp, auroc_px, pro
+                return auroc_sp, auroc_px, pro, ap
             else:
                 auroc_sp, f1, acc = evaluation_vad(c, model, test_dataloader, device)
                 return auroc_sp, acc, f1
