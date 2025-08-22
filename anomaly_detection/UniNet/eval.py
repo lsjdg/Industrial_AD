@@ -9,8 +9,6 @@ from sklearn.metrics import (
     roc_auc_score,
     precision_recall_curve,
     average_precision_score,
-    accuracy_score,
-    f1_score,
 )
 
 from sklearn.metrics import auc
@@ -23,7 +21,7 @@ from skimage.measure import label, regionprops
 from UniNet_lib.mechanism import weighted_decision_mechanism
 
 
-def evaluation_indusAD(c, model, dataloader, device):
+def evaluation_indusAD(c, model, dataloader, device, is_train=True):
     model.train_or_eval(type="eval")
     n = model.n
 
@@ -40,16 +38,11 @@ def evaluation_indusAD(c, model, dataloader, device):
             gt_list_px.extend(t2np(gt))
             weights_cnt += 1
 
-            img = (
-                sample[0].to(device)
-                if c.dataset == "MVTec 3D-AD"
-                else sample.to(device)
-            )
+            img = sample.to(device)
             t_tf, de_features = model(img)
 
             for l, (t, s) in enumerate(zip(t_tf, de_features)):
                 output = 1 - F.cosine_similarity(t, s)  # B*64*64
-                # print(output, output.shape)
                 output_list[l].append(output)
         fps = len(dataloader.dataset) / (time.time() - start_time)
         print("fps:", fps, len(dataloader.dataset))
@@ -72,44 +65,6 @@ def evaluation_indusAD(c, model, dataloader, device):
         pro = round(eval_seg_pro(gt_mask, anomaly_map), 1)
 
     return auroc_px, auroc_sp, pro, ap
-
-
-def evaluation_vad(c, model, dataloader, device):
-    model.train_or_eval(type="eval")
-    n = model.n
-    gt_list_sp = []
-    pr_list_sp = []
-    output_list = [list() for _ in range(n * 3)]
-    weights_cnt = 0
-    with torch.no_grad():
-        for idx, (img, label) in enumerate(dataloader):
-
-            img, label = img.to(device), label.to(device)
-            t_tf, de_features, _ = model(img)
-
-            label[label > 0.5] = 1
-            gt_list_sp.extend(t2np(label))
-            weights_cnt += 1
-
-            for l, (t, s) in enumerate(zip(t_tf, de_features)):
-                output = 1 - F.cosine_similarity(t, s)  # B*64*64
-                # print(output, output.shape)
-                output_list[l].append(output)
-
-        if c.weighted_decision_mechanism:
-            anomaly_score, _ = weighted_decision_mechanism(
-                weights_cnt, output_list, c.alpha, c.beta
-            )
-            # weights_list = [0.03] * weights_cnt
-            # anomaly_map = gaussian_filter(anomaly_score, sigma=4)
-            pr_list_sp = anomaly_score
-
-        thresh = return_best_thr(gt_list_sp, pr_list_sp)
-        acc = accuracy_score(gt_list_sp, pr_list_sp >= thresh) * 100
-        f1 = f1_score(gt_list_sp, pr_list_sp >= thresh) * 100
-        auroc_sp = round(roc_auc_score(gt_list_sp, pr_list_sp), 4) * 100
-
-    return auroc_sp, f1, acc
 
 
 def eval_seg_pro(gt_mask, anomaly_score_map, max_step=800):
@@ -160,45 +115,6 @@ def single_process(anomaly_score_map, gt_mask, thred):
     return pros_mean, fpr
 
 
-def get_gaussian_kernel(kernel_size=3, sigma=2, channels=1):
-    # Create a x, y coordinate grid of shape (kernel_size, kernel_size, 2)
-    x_coord = torch.arange(kernel_size)
-    x_grid = x_coord.repeat(kernel_size).view(kernel_size, kernel_size)
-    y_grid = x_grid.t()
-    xy_grid = torch.stack([x_grid, y_grid], dim=-1).float()
-
-    mean = (kernel_size - 1) / 2.0
-    variance = sigma**2.0
-
-    # Calculate the 2-dimensional gaussian kernel which is
-    # the product of two gaussian distributions for two different
-    # variables (in this case called x and y)
-    gaussian_kernel = (1.0 / (2.0 * math.pi * variance)) * torch.exp(
-        -torch.sum((xy_grid - mean) ** 2.0, dim=-1) / (2 * variance)
-    )
-
-    # Make sure sum of values in gaussian kernel equals 1.
-    gaussian_kernel = gaussian_kernel / torch.sum(gaussian_kernel)
-
-    # Reshape to 2d depthwise convolutional weight
-    gaussian_kernel = gaussian_kernel.view(1, 1, kernel_size, kernel_size)
-    gaussian_kernel = gaussian_kernel.repeat(channels, 1, 1, 1)
-
-    gaussian_filter = torch.nn.Conv2d(
-        in_channels=channels,
-        out_channels=channels,
-        kernel_size=kernel_size,
-        groups=channels,
-        bias=False,
-        padding=kernel_size // 2,
-    )
-
-    gaussian_filter.weight.data = gaussian_kernel
-    gaussian_filter.weight.requires_grad = False
-
-    return gaussian_filter
-
-
 def evaluation_batch(
     c, model, dataloader, device, _class_=None, reg_calib=False, max_ratio=0
 ):
@@ -206,7 +122,6 @@ def evaluation_batch(
     gt_list_sp = []
     output_list = [list() for i in range(6)]
     weights_cnt = 0
-    gaussian_kernel = get_gaussian_kernel(kernel_size=5, sigma=4).to(device)
 
     with torch.no_grad():
         for img, gt, label, cls in dataloader:

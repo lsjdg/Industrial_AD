@@ -10,7 +10,6 @@ from metadata import (
 import argparse
 from utils import setup_seed
 from test import test
-from visualization import save_anomaly_visualization
 
 
 def parsing_args():
