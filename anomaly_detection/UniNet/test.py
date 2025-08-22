@@ -4,7 +4,7 @@ import os
 import torch
 
 from UniNet_lib.DFS import DomainRelated_Feature_Selection
-from eval import evaluation_indusAD, evaluation_batch, evaluation_vad
+from eval import evaluation_indusAD, evaluation_batch
 from UniNet_lib.resnet import wide_resnet50_2
 from utils import load_weights, to_device
 from datasets import loading_dataset
@@ -69,13 +69,10 @@ def test(c, stu_type="un_cls", suffix="BEST_P_PRO"):
         if c.setting == "oc":
             if dataset_name in unsupervised:
                 auroc_px, auroc_sp, pro, ap = evaluation_indusAD(
-                    c, model, test_dataloader, device
+                    c, model, test_dataloader, device, is_train=False
                 )
 
                 return auroc_sp, auroc_px, pro, ap
-            else:
-                auroc_sp, f1, acc = evaluation_vad(c, model, test_dataloader, device)
-                return auroc_sp, acc, f1
 
         else:  # multiclass
             auroc_sp_list, ap_sp_list, f1_list = [], [], []
