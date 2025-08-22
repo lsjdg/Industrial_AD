@@ -117,5 +117,6 @@ cache/
 *.cache
 __pycache__
 
-# ckpts
+# ckpts & results
 ckpts
+maps/
