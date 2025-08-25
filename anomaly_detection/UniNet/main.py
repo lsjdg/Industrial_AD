@@ -33,9 +33,7 @@ def parsing_args():
         "--dataset",
         default="MVTecAD",
         type=str,
-        choices=[
-            "MVTecAD",
-        ],
+        choices=["MVTecAD", "MTD"],
         help="choose experimental dataset.",
     )
     parser.add_argument(
@@ -125,6 +123,8 @@ if __name__ == "__main__":
                 dataset = mvtec_dict["texture"] + mvtec_dict["object"]
             else:
                 dataset = mvtec_dict[c.class_group]
+        elif dataset_name == "MTD":
+            dataset = ["MTD"]
 
     else:
         raise KeyError(f"Dataset '{dataset_name}' can not be found.")

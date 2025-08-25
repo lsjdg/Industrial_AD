@@ -15,15 +15,22 @@ warnings.filterwarnings(
 )
 
 
-# BTAD_PATH = os.path.abspath(os.path.join("D:\ws/btad"))
-
-
 def loading_dataset(c, dataset_name):
     train_dataloader, test_dataloader = None, None
 
     if dataset_name == "MVTecAD" and c.setting == "oc":
         train_data = MVTecDataset(c, is_train=True)
         test_data = MVTecDataset(c, is_train=False)
+        train_dataloader = torch.utils.data.DataLoader(
+            train_data, batch_size=c.batch_size, shuffle=True, pin_memory=True
+        )
+        test_dataloader = torch.utils.data.DataLoader(
+            test_data, batch_size=1, shuffle=False, pin_memory=True
+        )
+
+    elif dataset_name == "MTD" and c.setting == "oc":
+        train_data = MtdDataset(c, is_train=True)
+        test_data = MtdDataset(c, is_train=False)
         train_dataloader = torch.utils.data.DataLoader(
             train_data, batch_size=c.batch_size, shuffle=True, pin_memory=True
         )
@@ -47,19 +54,21 @@ class MVTecDataset(torch.utils.data.Dataset):
         self.gt_dir = os.path.join(self.dataset_path, self.class_name, "ground_truth")
         # load dataset
         self.x, self.y, self.mask, _ = self.load_dataset()
-        # set transforms
-        if is_train:
-            self.transform_x = T.Compose(
-                [T.Resize(self.input_size, InterpolationMode.LANCZOS), T.ToTensor()]
-            )
-        # test:
-        else:
-            self.transform_x = T.Compose(
-                [T.Resize(self.input_size, InterpolationMode.LANCZOS), T.ToTensor()]
-            )
+        # Image transforms that preserve aspect ratio
+        self.transform_x = T.Compose(
+            [
+                T.Resize(c.image_size, InterpolationMode.LANCZOS),
+                T.CenterCrop(c.center_crop),
+                T.ToTensor(),
+            ]
+        )
         # mask
         self.transform_mask = T.Compose(
-            [T.Resize(self.input_size, InterpolationMode.NEAREST), T.ToTensor()]
+            [
+                T.Resize(c.image_size, InterpolationMode.NEAREST),
+                T.CenterCrop(c.center_crop),
+                T.ToTensor(),
+            ]
         )
 
         self.normalize = T.Compose(
@@ -138,10 +147,18 @@ class MtdDataset(torch.utils.data.Dataset):
 
         # transforms
         self.transform_x = T.Compose(
-            [T.Resize(self.input_size, InterpolationMode.LANCZOS), T.ToTensor()]
+            [
+                T.Resize(c.image_size, InterpolationMode.LANCZOS),
+                T.CenterCrop(c.center_crop),
+                T.ToTensor(),
+            ]
         )
         self.transform_gt = T.Compose(
-            T.Resize(self.input_size, InterpolationMode.NEAREST), T.ToTensor()
+            [
+                T.Resize(c.image_size, InterpolationMode.NEAREST),
+                T.CenterCrop(c.center_crop),
+                T.ToTensor(),
+            ]
         )
         self.normalize = T.Compose(
             [T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])]
@@ -171,15 +188,31 @@ class MtdDataset(torch.utils.data.Dataset):
         defect_types = os.listdir(self.img_dir)
 
         for defect in defect_types:
-            if defect == "good":
-                img_paths.extend(os.path.join(self.img_dir, defect) + "/*")
-                gt_paths.extend([None] * len(img_paths))
-                labels.extend([0] * len(img_paths))
-            else:
-                img_paths.extend(os.path.join(self.img_dir, defect) + "/*")
-                gt_paths.extend(os.path.join(self.gt_dir, defect) + "/*")
-                labels.extend([1] * len(img_paths))
+            current_img_paths = glob.glob(os.path.join(self.img_dir, defect) + "/*")
+            if not current_img_paths:
+                continue  # Skip empty directories
 
-        assert len(img_paths) != len(labels), "Number of samples do not match"
+            num_current_images = len(current_img_paths)
+            img_paths.extend(current_img_paths)
+
+            if defect == "good":
+                gt_paths.extend([None] * num_current_images)
+                labels.extend([0] * num_current_images)
+            else:
+                # Sort paths to ensure correspondence between images and masks
+                current_img_paths.sort()
+                current_gt_paths = glob.glob(os.path.join(self.gt_dir, defect) + "/*")
+                current_gt_paths.sort()
+                # Add an assertion for robustness
+                assert len(current_img_paths) == len(current_gt_paths), (
+                    f"Mismatch in number of images and masks for defect type '{defect}' in phase '{self.phase}'. "
+                    f"Found {len(current_img_paths)} images and {len(current_gt_paths)} masks."
+                )
+                gt_paths.extend(current_gt_paths)
+                labels.extend([1] * num_current_images)
+
+        assert len(img_paths) == len(
+            labels
+        ), f"Number of samples do not match for {self.phase}. Images: {len(img_paths)}, Labels: {len(labels)}"
 
         return img_paths, labels, gt_paths

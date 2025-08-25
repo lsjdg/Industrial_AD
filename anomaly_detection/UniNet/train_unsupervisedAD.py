@@ -84,12 +84,7 @@ def train(c):
 
         # ------------------------------------eval industrial and video-------------------------------------
 
-        if dataset_name in [
-            "MVTecAD",
-            "BTAD",
-            "MVTec 3D-AD",
-            "VisA",
-        ]:
+        if dataset_name in ["MVTecAD", "MTD"]:
             print(
                 "epoch [{}/{}], loss:{:.4f}".format(
                     epoch + 1, c.epochs, np.mean(loss_list)
@@ -100,7 +95,7 @@ def train(c):
         best_iroc = False
         if (epoch + 1) % 10 == 0 and c.domain in ["industrial", "video"]:
 
-            if dataset_name in ["MVTecAD", "BTAD", "MVTec 3D-AD", "VisA"]:
+            if dataset_name in ["MVTecAD", "MTD"]:
                 # evaluation
                 auroc_px, auroc_sp, aupro_px, ap = evaluation_indusAD(
                     c, model, test_dataloader, device
