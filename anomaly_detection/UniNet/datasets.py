@@ -15,7 +15,7 @@ warnings.filterwarnings(
 )
 
 
-BTAD_PATH = os.path.abspath(os.path.join("D:\ws/btad"))
+# BTAD_PATH = os.path.abspath(os.path.join("D:\ws/btad"))
 
 
 def loading_dataset(c, dataset_name):
@@ -124,22 +124,62 @@ class MVTecDataset(torch.utils.data.Dataset):
         return img_tot_paths, tot_labels, gt_tot_paths, tot_types
 
 
-def get_data_transforms(size, isize, mean_train=None, std_train=None):
-    mean_train = [0.485, 0.456, 0.406] if mean_train is None else mean_train
-    std_train = [0.229, 0.224, 0.225] if std_train is None else std_train
-    data_transforms = transforms.Compose(
-        [
-            transforms.Resize((size, size)),
-            transforms.ToTensor(),
-            transforms.CenterCrop(isize),
-            transforms.Normalize(mean=mean_train, std=std_train),
-        ]
-    )
-    gt_transforms = transforms.Compose(
-        [
-            transforms.Resize((size, size)),
-            transforms.CenterCrop(isize),
-            transforms.ToTensor(),
-        ]
-    )
-    return data_transforms, gt_transforms
+class MtdDataset(torch.utils.data.Dataset):
+    def __init__(self, c, is_train=True, dataset="MTD"):
+        self.dataset_path = "../../../data/" + dataset
+        self.phase = "train" if is_train else "test"
+
+        self.input_size = (c.image_size, c.image_size)
+        self.img_dir = os.path.join(self.dataset_path, self.phase)
+        self.gt_dir = os.path.join(self.dataset_path, "ground_truth")
+
+        # load dataset
+        self.x, self.y, self.gt = self.load_dataset()
+
+        # transforms
+        self.transform_x = T.Compose(
+            [T.Resize(self.input_size, InterpolationMode.LANCZOS), T.ToTensor()]
+        )
+        self.transform_gt = T.Compose(
+            T.Resize(self.input_size, InterpolationMode.NEAREST), T.ToTensor()
+        )
+        self.normalize = T.Compose(
+            [T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])]
+        )
+
+    def __getitem__(self, idx):
+        x_path, y, gt_path = self.x[idx], self.y[idx], self.gt[idx]
+        x = Image.open(x_path).convert("RGB")
+        x = self.normalize(self.transform_x(x))
+
+        if y == 0:
+            gt = torch.zeros([1, *self.input_size])
+        else:
+            gt = Image.open(gt_path)
+            gt = self.transform_gt(gt)
+
+        return x, y, gt, x_path
+
+    def __len__(self):
+        return len(self.x)
+
+    def load_dataset(self):
+        img_paths = list()
+        gt_paths = list()
+        labels = list()
+
+        defect_types = os.listdir(self.img_dir)
+
+        for defect in defect_types:
+            if defect == "good":
+                img_paths.extend(os.path.join(self.img_dir, defect) + "/*")
+                gt_paths.extend([None] * len(img_paths))
+                labels.extend([0] * len(img_paths))
+            else:
+                img_paths.extend(os.path.join(self.img_dir, defect) + "/*")
+                gt_paths.extend(os.path.join(self.gt_dir, defect) + "/*")
+                labels.extend([1] * len(img_paths))
+
+        assert len(img_paths) != len(labels), "Number of samples do not match"
+
+        return img_paths, labels, gt_paths
