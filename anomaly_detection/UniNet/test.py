@@ -11,7 +11,9 @@ from datasets import loading_dataset
 from metadata import unsupervised
 
 
-def test(c, stu_type="un_cls", suffix="BEST_P_PRO"):
+def test(
+    c, stu_type="un_cls", suffix="BEST_P_PRO", save_visuals=False
+):  # Added save_visuals parameter
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(device)
 
@@ -68,8 +70,8 @@ def test(c, stu_type="un_cls", suffix="BEST_P_PRO"):
     if c.domain == "industrial":
         if c.setting == "oc":
             if dataset_name in unsupervised:
-                auroc_px, auroc_sp, pro, ap = evaluation_indusAD(
-                    c, model, test_dataloader, device, is_train=False
+                auroc_px, auroc_sp, pro, ap = evaluation_indusAD(  # Pass save_visuals
+                    c, model, test_dataloader, device, save_visuals=save_visuals
                 )
 
                 return auroc_sp, auroc_px, pro, ap
