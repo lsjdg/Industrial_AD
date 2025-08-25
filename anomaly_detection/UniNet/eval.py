@@ -1,6 +1,7 @@
 import math
 import re
 import time
+import os  # Added for path manipulation
 import torch
 import numpy as np
 from skimage.measure import regionprops
@@ -17,22 +18,35 @@ from utils import t2np, rescale
 from functools import partial
 from multiprocessing import Pool
 from skimage.measure import label, regionprops
+from visualization import (
+    save_anomaly_visualization,
+)  # Import the visualization function
 
 from UniNet_lib.mechanism import weighted_decision_mechanism
 
 
-def evaluation_indusAD(c, model, dataloader, device, is_train=True):
+def evaluation_indusAD(
+    c, model, dataloader, device, save_visuals=False
+):  # Changed is_train to save_visuals
     model.train_or_eval(type="eval")
     n = model.n
 
+    # Lists to store original images and their paths for visualization
+    original_images = []
+    original_paths = []
     gt_list_px = []
     gt_list_sp = []
     output_list = [list() for _ in range(n * 3)]
     weights_cnt = 0
 
     start_time = time.time()
-    with torch.no_grad():
-        for idx, (sample, label, gt) in enumerate(dataloader):
+    with torch.no_grad():  # The dataloader now returns (sample, label, gt, path)
+        for idx, (sample, label, gt, path) in enumerate(dataloader):
+
+            # Store original images and paths for later visualization if save_visuals is enabled
+            if save_visuals:
+                original_images.append(sample.cpu())  # Store the tensor
+                original_paths.append(path)  # Store the path string
 
             gt_list_sp.extend(t2np(label))
             gt_list_px.extend(t2np(gt))
@@ -63,6 +77,41 @@ def evaluation_indusAD(c, model, dataloader, device, is_train=True):
         ap = round(average_precision_score(gt_label, anomaly_score) * 100, 1)
 
         pro = round(eval_seg_pro(gt_mask, anomaly_map), 1)
+
+    # Visualization part
+    if save_visuals:
+        # Only visualize for abnormal images
+        abnormal_indices = np.where(gt_label == 1)[0]
+
+        # Base directory for visuals: saved_results/dataset/visuals/class_name/
+        base_visual_save_dir = os.path.join(c.save_dir, "visuals", c.dataset, c._class_)
+
+        print(
+            f"Saving visuals for {len(abnormal_indices)} abnormal samples to {base_visual_save_dir}..."
+        )
+        # Iterate through abnormal samples to save visualizations
+        for i in abnormal_indices:  # Iterate through all abnormal images
+            map_np = anomaly_map[i]  # Get the anomaly map for this specific image
+            map_ts = torch.tensor(map_np)
+            full_image_path = original_paths[i][0]  # Get the original full path
+            print(type(full_image_path))
+            print(full_image_path)
+            # Extract anomaly type (e.g., 'broken_large') and image filename (e.g., '000.png')
+            # Assuming path structure: .../class_name/test/anomaly_type/image_name.png
+            path_parts = full_image_path.split(os.sep)
+            anomaly_type = path_parts[-2]  # The folder name before the image file
+            image_filename = os.path.basename(full_image_path)
+            root, ext = os.path.splitext(image_filename)
+            image_filename = f"{root}_map{ext}"
+
+            # Construct the final save path: base_visual_save_dir/anomaly_type/image_filename
+            final_save_dir = os.path.join(base_visual_save_dir, anomaly_type)
+            final_save_path = os.path.join(final_save_dir, image_filename)
+
+            save_anomaly_visualization(
+                anomaly_map=map_ts,
+                save_path=final_save_path,
+            )
 
     return auroc_px, auroc_sp, pro, ap
 

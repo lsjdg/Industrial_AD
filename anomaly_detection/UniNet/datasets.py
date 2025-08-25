@@ -67,10 +67,10 @@ class MVTecDataset(torch.utils.data.Dataset):
         )
 
     def __getitem__(self, idx):
-        x, y, mask = self.x[idx], self.y[idx], self.mask[idx]
+        x_path, y, mask = self.x[idx], self.y[idx], self.mask[idx]
         # x = Image.open(x).convert('RGB')
         # if os.path.isfile(x):
-        x = Image.open(x)
+        x = Image.open(x_path)
 
         if self.class_name in ["zipper", "screw", "grid"]:  # handle greyscale classes
             x = np.expand_dims(np.array(x), axis=2)
@@ -86,7 +86,7 @@ class MVTecDataset(torch.utils.data.Dataset):
             mask = Image.open(mask)
             mask = self.transform_mask(mask)
 
-        return x, y, mask
+        return x, y, mask, x_path
 
     def __len__(self):
         return len(self.x)

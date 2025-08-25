@@ -4,11 +4,11 @@ import cv2
 import os
 
 
-def visualize_anomaly_map(
+def save_anomaly_visualization(
     anomaly_map: torch.Tensor,
     save_path: str = None,
     colormap: int = cv2.COLORMAP_JET,
-    show: bool = True,
+    show: bool = False,
 ):
     am = anomaly_map.detach().cpu().float()
 

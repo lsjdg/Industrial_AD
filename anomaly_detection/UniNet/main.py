@@ -89,12 +89,18 @@ def parsing_args():
         default=True,
         help="whether to save model weights.",
     )
-    parser.add_argument("--save_dir", type=str, default="./saved_results")
+    parser.add_argument("--save_dir", type=str, default="../../../data")
     parser.add_argument(
         "--load_ckpts",
         action="store_true",
         default=False,
         help="loading ckpts for testing",
+    )
+    parser.add_argument(
+        "--save_visuals",
+        action="store_true",
+        default=False,
+        help="Save anomaly map visualizations for abnormal test samples.",
     )
 
     args = parser.parse_args()
@@ -183,9 +189,13 @@ if __name__ == "__main__":
                 # For AS, test with the model best at segmentation (P-PRO)
                 # For AD, test with the model best at detection (I-ROC)
                 if c.task == "as":
-                    auroc_sp, auroc_px, aupro_px, ap = test(c, suffix="BEST_P_PRO")
+                    auroc_sp, auroc_px, aupro_px, ap = test(
+                        c, suffix="BEST_P_PRO", save_visuals=c.save_visuals
+                    )
                 else:
-                    auroc_sp, auroc_px, aupro_px, ap = test(c, suffix="BEST_I_ROC")
+                    auroc_sp, auroc_px, aupro_px, ap = test(
+                        c, suffix="BEST_I_ROC", save_visuals=c.save_visuals
+                    )
 
                 print("")
 
