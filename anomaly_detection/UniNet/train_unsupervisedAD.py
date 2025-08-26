@@ -71,9 +71,7 @@ def train(c):
         loss_list = []
         for sample in train_dataloader:
             img = sample[0].to(device)
-            loss = model(
-                img, stop_gradient=dataset_name in ["APTOS", "ISIC2018", "OCT2017"]
-            )
+            loss = model(img, stop_gradient=False)
             optimizer.zero_grad()
             optimizer1.zero_grad()
             loss.backward()
@@ -93,7 +91,7 @@ def train(c):
 
         modules_list = [model.t.t_t, model.bn.bn, model.s.s1, DFS]
         best_iroc = False
-        if (epoch + 1) % 10 == 0 and c.domain in ["industrial", "video"]:
+        if (epoch + 1) % 10 == 0 and c.domain in ["industrial"]:
 
             if dataset_name in ["MVTecAD", "MTD"]:
                 # evaluation
@@ -106,33 +104,29 @@ def train(c):
                     )
                 )
 
-                # Track all max values for logging
+                # Track all max values and save weights if a metric improves
                 if max_IRoc < auroc_sp:
                     max_IRoc = auroc_sp
+                    print("saved BEST_I_ROC")
+                    (
+                        save_weights(modules_list, ckpt_path, "BEST_I_ROC")
+                        if c.is_saved
+                        else None
+                    )
+                if max_PPro < aupro_px:
+                    max_PPro = aupro_px
+                    print("saved BEST_P_PRO")
+                    (
+                        save_weights(modules_list, ckpt_path, "BEST_P_PRO")
+                        if c.is_saved
+                        else None
+                    )
+
+                # Also track other max values for logging purposes
                 if max_AP < ap:
                     max_AP = ap
                 if max_PRoc < auroc_px:
                     max_PRoc = auroc_px
-                if max_PPro < aupro_px:
-                    max_PPro = aupro_px
-
-                # Save model based on task
-                if c.task == "ad":
-                    if auroc_sp >= max_IRoc:
-                        print("saved BEST_I_ROC")
-                        (
-                            save_weights(modules_list, ckpt_path, "BEST_I_ROC")
-                            if c.is_saved
-                            else None
-                        )
-                elif c.task == "as":
-                    if aupro_px >= max_PPro:
-                        print("saved BEST_P_PRO")
-                        (
-                            save_weights(modules_list, ckpt_path, "BEST_P_PRO")
-                            if c.is_saved
-                            else None
-                        )
 
                 print(
                     f"MAX I_ROC: {max_IRoc:.1f}, MAX AP: {max_AP:.1f}, MAX P_ROC: {max_PRoc:.1f}, MAX P_PRO: {max_PPro:.1f}"
