@@ -250,7 +250,7 @@ if __name__ == "__main__":
             else:
                 task_name = "detection"
 
-            result_path = os.path.join(c.save_dir, c.dataset, task_name)
+            result_path = os.path.join("./saved_results", c.dataset, task_name)
             os.makedirs(result_path, exist_ok=True)
             result_file_path = os.path.join(result_path, f"{c.class_group}.txt")
             with open(result_file_path, "w") as f:

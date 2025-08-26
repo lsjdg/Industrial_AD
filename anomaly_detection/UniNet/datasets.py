@@ -41,19 +41,13 @@ def loading_dataset(c, dataset_name):
     return train_dataloader, test_dataloader
 
 
-class MVTecDataset(torch.utils.data.Dataset):
-    def __init__(self, c, is_train=True, dataset="MVTecAD"):
-        self.dataset_path = "../../../data/" + dataset
-        self.class_name = c._class_
-        self.is_train = is_train
+class BaseADDataset(torch.utils.data.Dataset):
+    """Base class for anomaly detection datasets to handle common transforms."""
 
+    def __init__(self, c, is_train=True, dataset="MVTecAD"):
+        self.is_train = is_train
         self.input_size = (c.image_size, c.image_size)
-        self.aug = False
-        phase = "train" if self.is_train else "test"
-        self.img_dir = os.path.join(self.dataset_path, self.class_name, phase)
-        self.gt_dir = os.path.join(self.dataset_path, self.class_name, "ground_truth")
-        # load dataset
-        self.x, self.y, self.mask, _ = self.load_dataset()
+
         # Image transforms that preserve aspect ratio
         self.transform_x = T.Compose(
             [
@@ -62,18 +56,29 @@ class MVTecDataset(torch.utils.data.Dataset):
                 T.ToTensor(),
             ]
         )
-        # mask
-        self.transform_mask = T.Compose(
+        # Mask transforms should use NEAREST interpolation
+        self.transform_gt = T.Compose(
             [
                 T.Resize(c.image_size, InterpolationMode.NEAREST),
                 T.CenterCrop(c.center_crop),
                 T.ToTensor(),
             ]
         )
-
         self.normalize = T.Compose(
             [T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])]
         )
+
+
+class MVTecDataset(BaseADDataset):
+    def __init__(self, c, is_train=True, dataset="MVTecAD"):
+        super().__init__(c, is_train)
+        self.dataset_path = "../../../data/" + dataset
+        self.class_name = c._class_
+        phase = "train" if self.is_train else "test"
+        self.img_dir = os.path.join(self.dataset_path, self.class_name, phase)
+        self.gt_dir = os.path.join(self.dataset_path, self.class_name, "ground_truth")
+        # load dataset
+        self.x, self.y, self.mask, _ = self.load_dataset()
 
     def __getitem__(self, idx):
         x_path, y, mask = self.x[idx], self.y[idx], self.mask[idx]
@@ -133,36 +138,16 @@ class MVTecDataset(torch.utils.data.Dataset):
         return img_tot_paths, tot_labels, gt_tot_paths, tot_types
 
 
-class MtdDataset(torch.utils.data.Dataset):
+class MtdDataset(BaseADDataset):
     def __init__(self, c, is_train=True, dataset="MTD"):
+        super().__init__(c, is_train)
         self.dataset_path = "../../../data/" + dataset
         self.phase = "train" if is_train else "test"
-
-        self.input_size = (c.image_size, c.image_size)
         self.img_dir = os.path.join(self.dataset_path, self.phase)
         self.gt_dir = os.path.join(self.dataset_path, "ground_truth")
 
         # load dataset
         self.x, self.y, self.gt = self.load_dataset()
-
-        # transforms
-        self.transform_x = T.Compose(
-            [
-                T.Resize(c.image_size, InterpolationMode.LANCZOS),
-                T.CenterCrop(c.center_crop),
-                T.ToTensor(),
-            ]
-        )
-        self.transform_gt = T.Compose(
-            [
-                T.Resize(c.image_size, InterpolationMode.NEAREST),
-                T.CenterCrop(c.center_crop),
-                T.ToTensor(),
-            ]
-        )
-        self.normalize = T.Compose(
-            [T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])]
-        )
 
     def __getitem__(self, idx):
         x_path, y, gt_path = self.x[idx], self.y[idx], self.gt[idx]
