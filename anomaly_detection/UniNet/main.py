@@ -2,11 +2,7 @@ import numpy as np
 import os
 
 from train_unsupervisedAD import train
-from metadata import (
-    unsupervised,
-    mvtec_dict,
-    industrial,
-)
+from metadata import *
 import argparse
 from utils import setup_seed
 from test import test

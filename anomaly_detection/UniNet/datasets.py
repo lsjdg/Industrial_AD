@@ -44,29 +44,57 @@ def loading_dataset(c, dataset_name):
 class BaseADDataset(torch.utils.data.Dataset):
     """Base class for anomaly detection datasets to handle common transforms."""
 
-    def __init__(self, c, is_train=True, dataset="MVTecAD"):
+    def __init__(self, c, is_train=True):
         self.is_train = is_train
         self.input_size = (c.image_size, c.image_size)
 
-        # Image transforms that preserve aspect ratio
+        # A more robust image transform that preserves aspect ratio without cropping
         self.transform_x = T.Compose(
             [
-                T.Resize(c.image_size, InterpolationMode.LANCZOS),
-                T.CenterCrop(c.center_crop),
+                T.Lambda(
+                    lambda img: self.resize_and_pad(img, (c.image_size, c.image_size))
+                ),
                 T.ToTensor(),
             ]
         )
-        # Mask transforms should use NEAREST interpolation
+        # gt transforms should use NEAREST interpolation
         self.transform_gt = T.Compose(
             [
-                T.Resize(c.image_size, InterpolationMode.NEAREST),
-                T.CenterCrop(c.center_crop),
+                T.Lambda(
+                    lambda img: self.resize_and_pad(
+                        img, (c.image_size, c.image_size), is_gt=True
+                    )
+                ),
                 T.ToTensor(),
             ]
         )
         self.normalize = T.Compose(
             [T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])]
         )
+
+    def resize_and_pad(self, img, output_size, is_gt=False):
+        # Resize with aspect ratio preservation
+        interpolation = Image.NEAREST if is_gt else Image.LANCZOS
+        img.thumbnail(output_size, interpolation)
+
+        # Pad to square using reflection for images and zeros for gts
+        img_np = np.array(img)
+        h, w = img_np.shape[:2]
+        pad_h = (output_size[1] - h) // 2
+        pad_w = (output_size[0] - w) // 2
+        padding = (
+            (pad_h, output_size[1] - h - pad_h),
+            (pad_w, output_size[0] - w - pad_w),
+        )
+
+        if is_gt:
+            padded_np = np.pad(img_np, padding, mode="constant", constant_values=0)
+        else:
+            # For RGB images, pad each channel
+            padding += ((0, 0),)
+            padded_np = np.pad(img_np, padding, mode="reflect")
+
+        return Image.fromarray(padded_np)
 
 
 class MVTecDataset(BaseADDataset):
@@ -78,10 +106,11 @@ class MVTecDataset(BaseADDataset):
         self.img_dir = os.path.join(self.dataset_path, self.class_name, phase)
         self.gt_dir = os.path.join(self.dataset_path, self.class_name, "ground_truth")
         # load dataset
-        self.x, self.y, self.mask, _ = self.load_dataset()
+        self.x, self.y, self.gt, _ = self.load_dataset()
+        # Alias transform_gt to the common gt transform for consistency
 
     def __getitem__(self, idx):
-        x_path, y, mask = self.x[idx], self.y[idx], self.mask[idx]
+        x_path, y, gt = self.x[idx], self.y[idx], self.gt[idx]
         # x = Image.open(x).convert('RGB')
         # if os.path.isfile(x):
         x = Image.open(x_path)
@@ -95,12 +124,12 @@ class MVTecDataset(BaseADDataset):
         x = self.normalize(self.transform_x(x))
         #
         if y == 0:
-            mask = torch.zeros([1, *self.input_size])
+            gt = torch.zeros([1, *self.input_size])
         else:
-            mask = Image.open(mask)
-            mask = self.transform_mask(mask)
+            gt = Image.open(gt)
+            gt = self.transform_gt(gt)
 
-        return x, y, mask, x_path
+        return x, y, gt, x_path
 
     def __len__(self):
         return len(self.x)
@@ -140,7 +169,7 @@ class MVTecDataset(BaseADDataset):
 
 class MtdDataset(BaseADDataset):
     def __init__(self, c, is_train=True, dataset="MTD"):
-        super().__init__(c, is_train)
+        super().__init__(c, is_train)  # Corrected super call
         self.dataset_path = "../../../data/" + dataset
         self.phase = "train" if is_train else "test"
         self.img_dir = os.path.join(self.dataset_path, self.phase)
@@ -184,14 +213,14 @@ class MtdDataset(BaseADDataset):
                 gt_paths.extend([None] * num_current_images)
                 labels.extend([0] * num_current_images)
             else:
-                # Sort paths to ensure correspondence between images and masks
+                # Sort paths to ensure correspondence between images and gts
                 current_img_paths.sort()
                 current_gt_paths = glob.glob(os.path.join(self.gt_dir, defect) + "/*")
                 current_gt_paths.sort()
                 # Add an assertion for robustness
                 assert len(current_img_paths) == len(current_gt_paths), (
-                    f"Mismatch in number of images and masks for defect type '{defect}' in phase '{self.phase}'. "
-                    f"Found {len(current_img_paths)} images and {len(current_gt_paths)} masks."
+                    f"Mismatch in number of images and gts for defect type '{defect}' in phase '{self.phase}'. "
+                    f"Found {len(current_img_paths)} images and {len(current_gt_paths)} gts."
                 )
                 gt_paths.extend(current_gt_paths)
                 labels.extend([1] * num_current_images)

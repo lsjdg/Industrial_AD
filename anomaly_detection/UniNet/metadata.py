@@ -26,3 +26,5 @@ mvtec_dict = {
         "zipper",
     ],
 }
+
+mtd_defects = ["Blowhole", "Break", "Crack", "Fray", "Uneven"]
