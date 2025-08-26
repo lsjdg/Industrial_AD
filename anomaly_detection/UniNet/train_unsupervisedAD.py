@@ -121,10 +121,14 @@ def train(c):
                         if c.is_saved
                         else None
                     )
-
-                # Also track other max values for logging purposes
                 if max_AP < ap:
                     max_AP = ap
+                    print("saved BEST_AP")
+                    (
+                        save_weights(modules_list, ckpt_path, "BEST_AP")
+                        if c.is_saved
+                        else None
+                    )
                 if max_PRoc < auroc_px:
                     max_PRoc = auroc_px
 
