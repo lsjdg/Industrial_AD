@@ -15,9 +15,6 @@ warnings.filterwarnings(
 )
 
 
-BTAD_PATH = os.path.abspath(os.path.join("D:\ws/btad"))
-
-
 def loading_dataset(c, dataset_name):
     train_dataloader, test_dataloader = None, None
 
@@ -31,40 +28,57 @@ def loading_dataset(c, dataset_name):
             test_data, batch_size=1, shuffle=False, pin_memory=True
         )
 
+    elif dataset_name == "MTD" and c.setting == "oc":
+        train_data = MtdDataset(c, is_train=True)
+        test_data = MtdDataset(c, is_train=False)
+        train_dataloader = torch.utils.data.DataLoader(
+            train_data, batch_size=c.batch_size, shuffle=True, pin_memory=True
+        )
+        test_dataloader = torch.utils.data.DataLoader(
+            test_data, batch_size=1, shuffle=False, pin_memory=True
+        )
+
     return train_dataloader, test_dataloader
 
 
-class MVTecDataset(torch.utils.data.Dataset):
+class BaseADDataset(torch.utils.data.Dataset):
+    """Base class for anomaly detection datasets to handle common transforms."""
+
     def __init__(self, c, is_train=True, dataset="MVTecAD"):
+        self.is_train = is_train
+        self.input_size = (c.image_size, c.image_size)
+
+        # Image transforms that preserve aspect ratio
+        self.transform_x = T.Compose(
+            [
+                T.Resize(c.image_size, InterpolationMode.LANCZOS),
+                T.CenterCrop(c.center_crop),
+                T.ToTensor(),
+            ]
+        )
+        # Mask transforms should use NEAREST interpolation
+        self.transform_gt = T.Compose(
+            [
+                T.Resize(c.image_size, InterpolationMode.NEAREST),
+                T.CenterCrop(c.center_crop),
+                T.ToTensor(),
+            ]
+        )
+        self.normalize = T.Compose(
+            [T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])]
+        )
+
+
+class MVTecDataset(BaseADDataset):
+    def __init__(self, c, is_train=True, dataset="MVTecAD"):
+        super().__init__(c, is_train)
         self.dataset_path = "../../../data/" + dataset
         self.class_name = c._class_
-        self.is_train = is_train
-
-        self.input_size = (c.image_size, c.image_size)
-        self.aug = False
         phase = "train" if self.is_train else "test"
         self.img_dir = os.path.join(self.dataset_path, self.class_name, phase)
         self.gt_dir = os.path.join(self.dataset_path, self.class_name, "ground_truth")
         # load dataset
         self.x, self.y, self.mask, _ = self.load_dataset()
-        # set transforms
-        if is_train:
-            self.transform_x = T.Compose(
-                [T.Resize(self.input_size, InterpolationMode.LANCZOS), T.ToTensor()]
-            )
-        # test:
-        else:
-            self.transform_x = T.Compose(
-                [T.Resize(self.input_size, InterpolationMode.LANCZOS), T.ToTensor()]
-            )
-        # mask
-        self.transform_mask = T.Compose(
-            [T.Resize(self.input_size, InterpolationMode.NEAREST), T.ToTensor()]
-        )
-
-        self.normalize = T.Compose(
-            [T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])]
-        )
 
     def __getitem__(self, idx):
         x_path, y, mask = self.x[idx], self.y[idx], self.mask[idx]
@@ -124,22 +138,66 @@ class MVTecDataset(torch.utils.data.Dataset):
         return img_tot_paths, tot_labels, gt_tot_paths, tot_types
 
 
-def get_data_transforms(size, isize, mean_train=None, std_train=None):
-    mean_train = [0.485, 0.456, 0.406] if mean_train is None else mean_train
-    std_train = [0.229, 0.224, 0.225] if std_train is None else std_train
-    data_transforms = transforms.Compose(
-        [
-            transforms.Resize((size, size)),
-            transforms.ToTensor(),
-            transforms.CenterCrop(isize),
-            transforms.Normalize(mean=mean_train, std=std_train),
-        ]
-    )
-    gt_transforms = transforms.Compose(
-        [
-            transforms.Resize((size, size)),
-            transforms.CenterCrop(isize),
-            transforms.ToTensor(),
-        ]
-    )
-    return data_transforms, gt_transforms
+class MtdDataset(BaseADDataset):
+    def __init__(self, c, is_train=True, dataset="MTD"):
+        super().__init__(c, is_train)
+        self.dataset_path = "../../../data/" + dataset
+        self.phase = "train" if is_train else "test"
+        self.img_dir = os.path.join(self.dataset_path, self.phase)
+        self.gt_dir = os.path.join(self.dataset_path, "ground_truth")
+
+        # load dataset
+        self.x, self.y, self.gt = self.load_dataset()
+
+    def __getitem__(self, idx):
+        x_path, y, gt_path = self.x[idx], self.y[idx], self.gt[idx]
+        x = Image.open(x_path).convert("RGB")
+        x = self.normalize(self.transform_x(x))
+
+        if y == 0:
+            gt = torch.zeros([1, *self.input_size])
+        else:
+            gt = Image.open(gt_path)
+            gt = self.transform_gt(gt)
+
+        return x, y, gt, x_path
+
+    def __len__(self):
+        return len(self.x)
+
+    def load_dataset(self):
+        img_paths = list()
+        gt_paths = list()
+        labels = list()
+
+        defect_types = os.listdir(self.img_dir)
+
+        for defect in defect_types:
+            current_img_paths = glob.glob(os.path.join(self.img_dir, defect) + "/*")
+            if not current_img_paths:
+                continue  # Skip empty directories
+
+            num_current_images = len(current_img_paths)
+            img_paths.extend(current_img_paths)
+
+            if defect == "good":
+                gt_paths.extend([None] * num_current_images)
+                labels.extend([0] * num_current_images)
+            else:
+                # Sort paths to ensure correspondence between images and masks
+                current_img_paths.sort()
+                current_gt_paths = glob.glob(os.path.join(self.gt_dir, defect) + "/*")
+                current_gt_paths.sort()
+                # Add an assertion for robustness
+                assert len(current_img_paths) == len(current_gt_paths), (
+                    f"Mismatch in number of images and masks for defect type '{defect}' in phase '{self.phase}'. "
+                    f"Found {len(current_img_paths)} images and {len(current_gt_paths)} masks."
+                )
+                gt_paths.extend(current_gt_paths)
+                labels.extend([1] * num_current_images)
+
+        assert len(img_paths) == len(
+            labels
+        ), f"Number of samples do not match for {self.phase}. Images: {len(img_paths)}, Labels: {len(labels)}"
+
+        return img_paths, labels, gt_paths

@@ -30,7 +30,6 @@ class EarlyStopping:
             self.counter = 0
 
     def save_checkpoint(self, pro):
-        """保存当前最佳模型"""
         if self.verbose:
             print(f"PRO increases ({self.pro_min:.1f} --> {pro:.1f}). Saving model...")
         self.pro_min = pro
@@ -61,12 +60,7 @@ class UniNet(nn.Module):
         if self._class_ in ["transistor"]:
             return a
 
-        if self.dfs is not None:
-            selected_features = self.dfs(a, b, learnable=True, conv=False, max=max)
-        else:
-            from .DFS import domain_related_feature_selection
-
-            selected_features = domain_related_feature_selection(a, b, max=max)
+        selected_features = self.dfs(a, b, learnable=True, conv=False, max=max)
         return selected_features
 
     def loss_computation(self, b, a, margin=1, mask=None, stop_gradient=False):
