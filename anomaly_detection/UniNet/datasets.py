@@ -51,20 +51,24 @@ class BaseADDataset(torch.utils.data.Dataset):
         # A more robust image transform that preserves aspect ratio without cropping
         self.transform_x = T.Compose(
             [
-                T.Lambda(
-                    lambda img: self.resize_and_pad(img, (c.image_size, c.image_size))
-                ),
+                # T.Lambda(
+                #     lambda img: self.resize_and_pad(img, (c.image_size, c.image_size))
+                # ),
+                T.Resize(c.image_size, InterpolationMode.LANCZOS),
+                T.CenterCrop(c.center_crop),
                 T.ToTensor(),
             ]
         )
         # gt transforms should use NEAREST interpolation
         self.transform_gt = T.Compose(
             [
-                T.Lambda(
-                    lambda img: self.resize_and_pad(
-                        img, (c.image_size, c.image_size), is_gt=True
-                    )
-                ),
+                # T.Lambda(
+                #     lambda img: self.resize_and_pad(
+                #         img, (c.image_size, c.image_size), is_gt=True
+                #     )
+                # ),
+                T.Resize(c.image_size, InterpolationMode.NEAREST),
+                T.CenterCrop(c.center_crop),
                 T.ToTensor(),
             ]
         )
@@ -111,18 +115,10 @@ class MVTecDataset(BaseADDataset):
 
     def __getitem__(self, idx):
         x_path, y, gt = self.x[idx], self.y[idx], self.gt[idx]
-        # x = Image.open(x).convert('RGB')
-        # if os.path.isfile(x):
-        x = Image.open(x_path)
-
-        if self.class_name in ["zipper", "screw", "grid"]:  # handle greyscale classes
-            x = np.expand_dims(np.array(x), axis=2)
-            x = np.concatenate([x, x, x], axis=2)
-
-            x = Image.fromarray(x.astype("uint8")).convert("RGB")
-        #
+        # Use .convert('RGB') to robustly handle both color and grayscale images,
+        # making it consistent with MtdDataset.
+        x = Image.open(x_path).convert("RGB")
         x = self.normalize(self.transform_x(x))
-        #
         if y == 0:
             gt = torch.zeros([1, *self.input_size])
         else:
@@ -148,6 +144,7 @@ class MVTecDataset(BaseADDataset):
             # continue
             if defect_type == "good":
                 img_paths = glob.glob(os.path.join(self.img_dir, defect_type) + "/*")
+                img_paths.sort()
                 img_tot_paths.extend(img_paths)
                 gt_tot_paths.extend([None] * len(img_paths))
                 tot_labels.extend([0] * len(img_paths))

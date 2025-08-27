@@ -4,44 +4,42 @@ import cv2
 import os
 
 
+def denormalize(tensor, mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]):
+    tensor = tensor.clone()
+    for t, m, s in zip(tensor, mean, std):
+        t.mul_(s).add_(m)
+    return tensor
+
+
 def save_anomaly_visualization(
-    anomaly_map: torch.Tensor,
+    original_image: torch.Tensor,
+    anomaly_map: np.ndarray,
     save_path: str = None,
-    colormap: int = cv2.COLORMAP_JET,
-    show: bool = False,
+    alpha: float = 0.5,
 ):
-    am = anomaly_map.detach().cpu().float()
-
-    # (3,H,W) → (H,W,3)
-    if am.ndim == 3 and am.shape[0] == 3:
-        am = am.permute(1, 2, 0).numpy()
-    elif am.ndim == 3 and am.shape[0] == 1:
-        am = am.squeeze(0).numpy()
-    else:
-        am = am.numpy()
-
-    # 정규화
-    amin, amax = am.min(), am.max()
-    if amax - amin < 1e-8:
-        am01 = np.zeros_like(am, dtype=np.float32)
-    else:
-        am01 = (am - amin) / (amax - amin)
-
-    if am01.ndim == 2:  # grayscale
-        am_u8 = (am01 * 255).astype(np.uint8)
-        am_color = cv2.applyColorMap(am_u8, colormap)
-    else:  # 이미 3채널
-        am_color = (am01 * 255).astype(np.uint8)
-
+    """Creates and saves a visualization of the anomaly map overlaid on the original image."""
     if save_path is not None:
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
-        cv2.imwrite(save_path, am_color)
 
-    if show:
-        import matplotlib.pyplot as plt
+    # 1. Prepare the original image
+    if original_image.dim() == 4:
+        original_image = original_image.squeeze(0)
+    img_np = denormalize(original_image.cpu()).permute(1, 2, 0).numpy()
+    img_np = (img_np * 255).astype(np.uint8)
+    img_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
 
-        plt.imshow(cv2.cvtColor(am_color, cv2.COLOR_BGR2RGB))
-        plt.axis("off")
-        plt.show()
+    # 2. Prepare the anomaly map
+    heatmap_norm = cv2.normalize(
+        anomaly_map, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U
+    )
+    heatmap_color = cv2.applyColorMap(
+        heatmap_norm, cv2.COLORMAP_HOT
+    )  # HOT colormap gives yellow-ish feel
 
-    return am_color
+    # 3. Blend the original image with the heatmap
+    superimposed_img = cv2.addWeighted(heatmap_color, alpha, img_bgr, 1 - alpha, 0)
+
+    if save_path is not None:
+        cv2.imwrite(save_path, superimposed_img)
+
+    return superimposed_img
