@@ -63,17 +63,17 @@ class UniNet(nn.Module):
         selected_features = self.dfs(a, b, learnable=True, conv=False, max=max)
         return selected_features
 
-    def loss_computation(self, b, a, margin=1, mask=None, stop_gradient=False):
+    def loss_computation(self, b, a, margin=1, mask=None):
         T = (
             0.1
             if self._class_ in ["transistor", "pill", "cable", "bottle", "grid", "foam"]
             else self.T
         )
-        loss = losses(b, a, T, margin, mask=mask, stop_gradient=stop_gradient)
-
+        # For industrial datasets, stop_gradient is always False.
+        loss = losses(b, a, T, margin, mask=mask, stop_gradient=False)
         return loss
 
-    def forward(self, x, max=True, mask=None, stop_gradient=False):
+    def forward(self, x, max=True, mask=None):
         Sou_Tar_features, bnins = self.t(x)
         bnsout = self.bn(bnins)
         stu_features = self.s(bnsout)
@@ -90,9 +90,7 @@ class UniNet(nn.Module):
 
         if self.type == "train":
             stu_features_ = self.feature_selection(Sou_Tar_features, stu_features, max)
-            loss = self.loss_computation(
-                Sou_Tar_features, stu_features_, mask=mask, stop_gradient=stop_gradient
-            )
+            loss = self.loss_computation(Sou_Tar_features, stu_features_, mask=mask)
 
             return loss
         else:

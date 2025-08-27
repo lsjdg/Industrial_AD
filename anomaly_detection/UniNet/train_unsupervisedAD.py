@@ -71,7 +71,7 @@ def train(c):
         loss_list = []
         for sample in train_dataloader:
             img = sample[0].to(device)
-            loss = model(img, stop_gradient=False)
+            loss = model(img)
             optimizer.zero_grad()
             optimizer1.zero_grad()
             loss.backward()
@@ -80,7 +80,7 @@ def train(c):
             optimizer1.step()
             loss_list.append(loss.item())
 
-        # ------------------------------------eval industrial and video-------------------------------------
+        # ------------------------------------evaluation-------------------------------------
 
         if dataset_name in ["MVTecAD", "MTD"]:
             print(

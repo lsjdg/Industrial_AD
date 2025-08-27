@@ -130,10 +130,10 @@ class MVTecDataset(BaseADDataset):
         return img_tot_paths, tot_labels, gt_tot_paths, tot_types
 
 
-class MtdDataset:
+class MtdDataset(torch.utils.data.Dataset):
     def __init__(self, c, is_train=True, dataset="MTD_exp"):
-        super().__init__(c, is_train)
-        self.image_size = (c.image_size,)
+        super().__init__()
+        self.input_size = (c.image_size, c.image_size)
         self.dataset_path = "../../../data/" + dataset
         self.phase = "train" if is_train else "test"
         self.img_dir = os.path.join(self.dataset_path, self.phase)
@@ -142,21 +142,16 @@ class MtdDataset:
         # load dataset
         self.x, self.y, self.gt = self.load_dataset()
 
-    def __getitem__(self, idx):
-        x_path, y, gt_path = self.x[idx], self.y[idx], self.gt[idx]
-        x = Image.open(x_path).convert("RGB")
-
         # Transforms
         self.transform_x = T.Compose(
             [
-                T.Resize(self.image_size, InterpolationMode.LANCZOS),
+                T.Resize(self.input_size, InterpolationMode.LANCZOS),
                 T.ToTensor(),
             ]
         )
-
         self.transform_gt = T.Compose(
             [
-                T.Resize(self.image_size, InterpolationMode.NEAREST),
+                T.Resize(self.input_size, InterpolationMode.NEAREST),
                 T.ToTensor(),
             ]
         )
@@ -164,6 +159,9 @@ class MtdDataset:
             [T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])]
         )
 
+    def __getitem__(self, idx):
+        x_path, y, gt_path = self.x[idx], self.y[idx], self.gt[idx]
+        x = Image.open(x_path).convert("RGB")
         x = self.normalize(self.transform_x(x))
 
         if y == 0:
@@ -172,7 +170,7 @@ class MtdDataset:
             gt = Image.open(gt_path)
             gt = self.transform_gt(gt)
 
-        return x, y, gt, x_path
+        return x, y, gt, x_path  # Returning x_path for potential use in evaluation
 
     def __len__(self):
         return len(self.x)
