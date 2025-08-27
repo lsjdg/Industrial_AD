@@ -2,8 +2,8 @@ Results for dataset: MTD, class group: all, task: segmentation
 
 | class   |   P-AUROC |   PRO |
 |:--------|----------:|------:|
-| MTD     |      70.2 |  64.2 |
-| mean    |      70.2 |  64.2 |
+| MTD     |      68.9 |  73.5 |
+| mean    |      68.9 |  73.5 |
 
 Parameters:
 
