@@ -82,18 +82,9 @@ class MVTecDataset(BaseADDataset):
 
     def __getitem__(self, idx):
         x_path, y, mask = self.x[idx], self.y[idx], self.mask[idx]
-        # x = Image.open(x).convert('RGB')
-        # if os.path.isfile(x):
-        x = Image.open(x_path)
-
-        if self.class_name in ["zipper", "screw", "grid"]:  # handle greyscale classes
-            x = np.expand_dims(np.array(x), axis=2)
-            x = np.concatenate([x, x, x], axis=2)
-
-            x = Image.fromarray(x.astype("uint8")).convert("RGB")
-        #
+        # Use .convert('RGB') to robustly handle both color and grayscale images,
+        x = Image.open(x_path).convert("RGB")
         x = self.normalize(self.transform_x(x))
-        #
         if y == 0:
             mask = torch.zeros([1, *self.input_size])
         else:
@@ -119,6 +110,7 @@ class MVTecDataset(BaseADDataset):
             # continue
             if defect_type == "good":
                 img_paths = glob.glob(os.path.join(self.img_dir, defect_type) + "/*")
+                img_paths.sort()
                 img_tot_paths.extend(img_paths)
                 gt_tot_paths.extend([None] * len(img_paths))
                 tot_labels.extend([0] * len(img_paths))
@@ -151,6 +143,8 @@ class MtdDataset(BaseADDataset):
 
     def __getitem__(self, idx):
         x_path, y, gt_path = self.x[idx], self.y[idx], self.gt[idx]
+
+        # Load image from path and ensure it's in RGB format
         x = Image.open(x_path).convert("RGB")
         x = self.normalize(self.transform_x(x))
 
@@ -177,6 +171,8 @@ class MtdDataset(BaseADDataset):
             if not current_img_paths:
                 continue  # Skip empty directories
 
+            # Sort paths to ensure consistent order before extending the main lists
+            current_img_paths.sort()
             num_current_images = len(current_img_paths)
             img_paths.extend(current_img_paths)
 
@@ -184,8 +180,6 @@ class MtdDataset(BaseADDataset):
                 gt_paths.extend([None] * num_current_images)
                 labels.extend([0] * num_current_images)
             else:
-                # Sort paths to ensure correspondence between images and masks
-                current_img_paths.sort()
                 current_gt_paths = glob.glob(os.path.join(self.gt_dir, defect) + "/*")
                 current_gt_paths.sort()
                 # Add an assertion for robustness
