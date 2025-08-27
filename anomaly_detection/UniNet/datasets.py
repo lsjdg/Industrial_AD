@@ -130,9 +130,10 @@ class MVTecDataset(BaseADDataset):
         return img_tot_paths, tot_labels, gt_tot_paths, tot_types
 
 
-class MtdDataset(BaseADDataset):
-    def __init__(self, c, is_train=True, dataset="MTD"):
+class MtdDataset:
+    def __init__(self, c, is_train=True, dataset="MTD_exp"):
         super().__init__(c, is_train)
+        self.image_size = (c.image_size,)
         self.dataset_path = "../../../data/" + dataset
         self.phase = "train" if is_train else "test"
         self.img_dir = os.path.join(self.dataset_path, self.phase)
@@ -143,9 +144,26 @@ class MtdDataset(BaseADDataset):
 
     def __getitem__(self, idx):
         x_path, y, gt_path = self.x[idx], self.y[idx], self.gt[idx]
-
-        # Load image from path and ensure it's in RGB format
         x = Image.open(x_path).convert("RGB")
+
+        # Transforms
+        self.transform_x = T.Compose(
+            [
+                T.Resize(self.image_size, InterpolationMode.LANCZOS),
+                T.ToTensor(),
+            ]
+        )
+
+        self.transform_gt = T.Compose(
+            [
+                T.Resize(self.image_size, InterpolationMode.NEAREST),
+                T.ToTensor(),
+            ]
+        )
+        self.normalize = T.Compose(
+            [T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])]
+        )
+
         x = self.normalize(self.transform_x(x))
 
         if y == 0:
@@ -171,7 +189,6 @@ class MtdDataset(BaseADDataset):
             if not current_img_paths:
                 continue  # Skip empty directories
 
-            # Sort paths to ensure consistent order before extending the main lists
             current_img_paths.sort()
             num_current_images = len(current_img_paths)
             img_paths.extend(current_img_paths)
