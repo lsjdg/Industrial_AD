@@ -82,18 +82,9 @@ class MVTecDataset(BaseADDataset):
 
     def __getitem__(self, idx):
         x_path, y, mask = self.x[idx], self.y[idx], self.mask[idx]
-        # x = Image.open(x).convert('RGB')
-        # if os.path.isfile(x):
-        x = Image.open(x_path)
-
-        if self.class_name in ["zipper", "screw", "grid"]:  # handle greyscale classes
-            x = np.expand_dims(np.array(x), axis=2)
-            x = np.concatenate([x, x, x], axis=2)
-
-            x = Image.fromarray(x.astype("uint8")).convert("RGB")
-        #
+        # Use .convert('RGB') to robustly handle both color and grayscale images,
+        x = Image.open(x_path).convert("RGB")
         x = self.normalize(self.transform_x(x))
-        #
         if y == 0:
             mask = torch.zeros([1, *self.input_size])
         else:
@@ -119,6 +110,7 @@ class MVTecDataset(BaseADDataset):
             # continue
             if defect_type == "good":
                 img_paths = glob.glob(os.path.join(self.img_dir, defect_type) + "/*")
+                img_paths.sort()
                 img_tot_paths.extend(img_paths)
                 gt_tot_paths.extend([None] * len(img_paths))
                 tot_labels.extend([0] * len(img_paths))
@@ -138,9 +130,10 @@ class MVTecDataset(BaseADDataset):
         return img_tot_paths, tot_labels, gt_tot_paths, tot_types
 
 
-class MtdDataset(BaseADDataset):
-    def __init__(self, c, is_train=True, dataset="MTD"):
+class MtdDataset:
+    def __init__(self, c, is_train=True, dataset="MTD_exp"):
         super().__init__(c, is_train)
+        self.image_size = (c.image_size,)
         self.dataset_path = "../../../data/" + dataset
         self.phase = "train" if is_train else "test"
         self.img_dir = os.path.join(self.dataset_path, self.phase)
@@ -152,6 +145,25 @@ class MtdDataset(BaseADDataset):
     def __getitem__(self, idx):
         x_path, y, gt_path = self.x[idx], self.y[idx], self.gt[idx]
         x = Image.open(x_path).convert("RGB")
+
+        # Transforms
+        self.transform_x = T.Compose(
+            [
+                T.Resize(self.image_size, InterpolationMode.LANCZOS),
+                T.ToTensor(),
+            ]
+        )
+
+        self.transform_gt = T.Compose(
+            [
+                T.Resize(self.image_size, InterpolationMode.NEAREST),
+                T.ToTensor(),
+            ]
+        )
+        self.normalize = T.Compose(
+            [T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])]
+        )
+
         x = self.normalize(self.transform_x(x))
 
         if y == 0:
@@ -177,6 +189,7 @@ class MtdDataset(BaseADDataset):
             if not current_img_paths:
                 continue  # Skip empty directories
 
+            current_img_paths.sort()
             num_current_images = len(current_img_paths)
             img_paths.extend(current_img_paths)
 
@@ -184,8 +197,6 @@ class MtdDataset(BaseADDataset):
                 gt_paths.extend([None] * num_current_images)
                 labels.extend([0] * num_current_images)
             else:
-                # Sort paths to ensure correspondence between images and masks
-                current_img_paths.sort()
                 current_gt_paths = glob.glob(os.path.join(self.gt_dir, defect) + "/*")
                 current_gt_paths.sort()
                 # Add an assertion for robustness
