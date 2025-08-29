@@ -19,7 +19,17 @@ warnings.filterwarnings(
 def loading_dataset(c, dataset_name):
     train_dataloader, test_dataloader = None, None
 
-    if dataset_name == "MTD" and c.setting == "oc":
+    if dataset_name == "MVTecAD" and c.setting == "oc":
+        train_data = MVTecDataset(c, is_train=True)
+        test_data = MVTecDataset(c, is_train=False)
+        train_dataloader = torch.utils.data.DataLoader(
+            train_data, batch_size=c.batch_size, shuffle=True, pin_memory=True
+        )
+        test_dataloader = torch.utils.data.DataLoader(
+            test_data, batch_size=1, shuffle=False, pin_memory=True
+        )
+
+    elif dataset_name == "MTD" and c.setting == "oc":
         train_data = MtdDataset(c, is_train=True)
         test_data = MtdDataset(c, is_train=False)
         train_dataloader = torch.utils.data.DataLoader(
@@ -32,109 +42,151 @@ def loading_dataset(c, dataset_name):
     return train_dataloader, test_dataloader
 
 
-class ClaheTransform:
-    """Applies Contrast Limited Adaptive Histogram Equalization to the L-channel of an LAB image."""
-
-    def __init__(self, clip_limit=2.0, tile_grid_size=(8, 8)):
-        self.clip_limit = clip_limit
-        self.tile_grid_size = tile_grid_size
-
-    def __call__(self, img: Image.Image) -> Image.Image:
-        img_np = np.array(img.convert("RGB"))
-        img_lab = cv2.cvtColor(img_np, cv2.COLOR_RGB2LAB)
-        clahe = cv2.createCLAHE(
-            clipLimit=self.clip_limit, tileGridSize=self.tile_grid_size
-        )
-        img_lab[:, :, 0] = clahe.apply(img_lab[:, :, 0])
-        img_rgb = cv2.cvtColor(img_lab, cv2.COLOR_LAB2RGB)
-        return Image.fromarray(img_rgb)
-
-
 class UnifiedTransform:
     """
-    A unified transform pipeline that handles conditional resizing, padding, and CLAHE.
-    This ensures consistency between training and evaluation.
+    Applies aspect-ratio-preserving resize (letterboxing) to both image and mask,
+    and generates a padding exclusion mask.
     """
 
-    def __init__(self, c, use_clahe=False):
-        self.canvas_size = (c.image_size, c.image_size)
-        self.max_size = c.image_size
-        self.use_clahe = use_clahe
-
-        if self.use_clahe:
-            self.clahe = ClaheTransform()
-
-        self.normalize = T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-
-    def __call__(self, img, mask=None):
-        if self.use_clahe:
-            img = self.clahe(img)
-
-        w, h = img.size
-        if w > self.max_size or h > self.max_size:
-            img.thumbnail((self.max_size, self.max_size), Image.LANCZOS)
-
-        if mask is None:
-            mask = Image.new("L", img.size, 0)
+    def __init__(self, image_size, fill_color=0):
+        if isinstance(image_size, int):
+            self.image_size = (image_size, image_size)
         else:
-            mask.thumbnail(img.size, Image.NEAREST)
+            self.image_size = image_size  # (H, W)
+        self.fill_color = fill_color
+        self.to_tensor = T.ToTensor()
 
-        img_padded = self._pad_to_canvas(img, self.canvas_size, is_mask=False)
-        mask_padded = self._pad_to_canvas(mask, self.canvas_size, is_mask=True)
-
-        img_tensor = T.ToTensor()(img_padded)
-        mask_tensor = T.ToTensor()(mask_padded)
-
-        img_tensor = self.normalize(img_tensor)
-
-        return img_tensor, mask_tensor
-
-    def _pad_to_canvas(self, img, canvas_size, is_mask=False):
-        """Pads the image to the center of a fixed-size canvas."""
+    def __call__(self, img: Image.Image, mask: Image.Image):
+        # 1. Calculate resize geometry from the image
         w, h = img.size
-        pad_w = max(0, canvas_size[0] - w)
-        pad_h = max(0, canvas_size[1] - h)
+        target_h, target_w = self.image_size
+        ratio = min(target_w / w, target_h / h)
+        new_w, new_h = int(w * ratio), int(h * ratio)
+        paste_x = (target_w - new_w) // 2
+        paste_y = (target_h - new_h) // 2
 
-        left = pad_w // 2
-        right = pad_w - left
-        top = pad_h // 2
-        bottom = pad_h - top
+        # 2. Transform the image
+        resized_img = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+        padded_img = Image.new(img.mode, (target_w, target_h), self.fill_color)
+        padded_img.paste(resized_img, (paste_x, paste_y))
+        img_tensor = self.to_tensor(padded_img)
 
-        padding = (left, top, right, bottom)
-        padding_mode = "reflect" if not is_mask else "constant"
-        fill = 0
+        # 3. Transform the mask using the same geometry
+        resized_mask = mask.resize((new_w, new_h), Image.Resampling.NEAREST)
+        padded_mask_img = Image.new(mask.mode, (target_w, target_h), 0)
+        padded_mask_img.paste(resized_mask, (paste_x, paste_y))
+        mask_tensor = self.to_tensor(padded_mask_img)
 
-        return T.functional.pad(
-            img,
-            padding,
-            fill=fill,
-            padding_mode=padding_mode,
+        # 4. Create padding exclusion mask
+        padding_mask = torch.zeros((1, target_h, target_w), dtype=torch.float32)
+        padding_mask[:, paste_y : paste_y + new_h, paste_x : paste_x + new_w] = 1.0
+
+        return img_tensor, mask_tensor, padding_mask
+
+
+class BaseADDataset(torch.utils.data.Dataset):
+    """Base class for anomaly detection datasets to handle common transforms."""
+
+    def __init__(self, c, is_train=True, dataset="MVTecAD"):
+        self.is_train = is_train
+
+        # Unified transform for image, mask, and padding mask generation
+        self.transform = UnifiedTransform(image_size=c.image_size)
+
+        self.normalize = T.Compose(
+            [T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])]
         )
 
 
-class MtdDataset(torch.utils.data.Dataset):
+class MVTecDataset(BaseADDataset):
+    def __init__(self, c, is_train=True, dataset="MVTecAD"):
+        super().__init__(c, is_train)
+        self.dataset_path = "../../../data/" + dataset
+        self.class_name = c._class_
+        phase = "train" if self.is_train else "test"
+        self.img_dir = os.path.join(self.dataset_path, self.class_name, phase)
+        self.gt_dir = os.path.join(self.dataset_path, self.class_name, "ground_truth")
+        # load dataset
+        self.x, self.y, self.mask, _ = self.load_dataset()
+
+    def __getitem__(self, idx):
+        x_path, y, mask_path = self.x[idx], self.y[idx], self.mask[idx]
+        # Use .convert('RGB') to robustly handle both color and grayscale images,
+        x = Image.open(x_path).convert("RGB")
+
+        if mask_path is None:
+            mask = Image.new("L", x.size, 0)
+        else:
+            mask = Image.open(mask_path).convert("L")
+
+        x_tensor, mask_tensor, padding_mask = self.transform(x, mask)
+
+        x_tensor = self.normalize(x_tensor)
+
+        return x_tensor, y, mask_tensor, padding_mask, x_path
+
+    def __len__(self):
+        return len(self.x)
+
+    def load_dataset(self):
+
+        img_tot_paths = list()
+        gt_tot_paths = list()
+        tot_labels = list()
+        tot_types = list()
+
+        defect_types = os.listdir(self.img_dir)
+
+        for defect_type in defect_types:
+            # if self.is_vis and defect_type == "good":
+            # continue
+            if defect_type == "good":
+                img_paths = glob.glob(os.path.join(self.img_dir, defect_type) + "/*")
+                img_paths.sort()
+                img_tot_paths.extend(img_paths)
+                gt_tot_paths.extend([None] * len(img_paths))
+                tot_labels.extend([0] * len(img_paths))
+            else:
+                img_paths = glob.glob(os.path.join(self.img_dir, defect_type) + "/*")
+                gt_paths = glob.glob(os.path.join(self.gt_dir, defect_type) + "/*")
+                img_paths.sort()
+                gt_paths.sort()
+                img_tot_paths.extend(img_paths)
+                gt_tot_paths.extend(gt_paths)
+                tot_labels.extend([1] * len(img_paths))
+
+        assert len(img_tot_paths) == len(
+            tot_labels
+        ), "Something wrong with test and ground truth pair!"
+
+        return img_tot_paths, tot_labels, gt_tot_paths, tot_types
+
+
+class MtdDataset(BaseADDataset):
     def __init__(self, c, is_train=True, dataset="MTD_exp"):
-        super().__init__()
+        super().__init__(c, is_train)
         self.dataset_path = "../../../data/" + dataset
         self.phase = "train" if is_train else "test"
         self.img_dir = os.path.join(self.dataset_path, self.phase)
         self.gt_dir = os.path.join(self.dataset_path, "ground_truth")
 
-        # Use the unified transform for both training and testing
-        self.transform = UnifiedTransform(c, use_clahe=False)
-
         # load dataset
-        self.x, self.y, self.gt = self.load_dataset()
+        self.x, self.y, self.mask = self.load_dataset()
 
     def __getitem__(self, idx):
-        x_path, y, gt_path = self.x[idx], self.y[idx], self.gt[idx]
+        x_path, y, mask_path = self.x[idx], self.y[idx], self.mask[idx]
         x = Image.open(x_path).convert("RGB")
 
-        gt = Image.open(gt_path).convert("L") if gt_path is not None else None
+        if mask_path is None:
+            mask = Image.new("L", x.size, 0)
+        else:
+            mask = Image.open(mask_path).convert("L")
 
-        x_tensor, gt_tensor = self.transform(x, gt)
+        x_tensor, mask_tensor, padding_mask = self.transform(x, mask)
 
-        return x_tensor, y, gt_tensor, x_path
+        x_tensor = self.normalize(x_tensor)
+
+        return x_tensor, y, mask_tensor, padding_mask, x_path
 
     def __len__(self):
         return len(self.x)
