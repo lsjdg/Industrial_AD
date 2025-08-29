@@ -9,31 +9,28 @@ class EarlyStopping:
         self.patience = patience
         self.delta = delta
         self.verbose = verbose
-
         self.counter = 0
-        self.best_pro = None
+        self.best_pro = (
+            -1.0
+        )  # Initialize with a value lower than any possible PRO score
         self.early_stop = False
-        self.pro_min = 0.0
 
     def __call__(self, pro):
-        current_pro = pro
-
-        if self.best_pro is None:
-            self.best_pro = current_pro
-        elif current_pro < self.best_pro + self.delta:
+        # Check if the current PRO score is an improvement
+        if pro > self.best_pro + self.delta:
+            if self.verbose:
+                print(
+                    f"PRO increases ({self.best_pro:.1f} --> {pro:.1f}). Saving model..."
+                )
+            self.best_pro = pro
+            self.counter = 0
+            # The actual model saving logic should be called here from the training loop
+        else:
             self.counter += 1
-            print(f"EarlyStopping counter: {self.counter}/{self.patience}")
+            if self.verbose:
+                print(f"EarlyStopping counter: {self.counter}/{self.patience}")
             if self.counter >= self.patience:
                 self.early_stop = True
-        else:
-            self.best_pro = current_pro
-            self.save_checkpoint(current_pro)
-            self.counter = 0
-
-    def save_checkpoint(self, pro):
-        if self.verbose:
-            print(f"PRO increases ({self.pro_min:.1f} --> {pro:.1f}). Saving model...")
-        self.pro_min = pro
 
 
 class UniNet(nn.Module):
@@ -89,40 +86,34 @@ class UniNet(nn.Module):
             stu_features[2][1],
         ]
 
+        # --- Refactored Feature Alignment ---
+        # 1. Define a common target size for alignment.
+        #    Using the spatial dimensions of the first (largest) feature map is a good practice.
+        target_size = Sou_Tar_features[0].shape[-2:]
+
+        # 2. Align all teacher and student features to the common target size
+        #    using adaptive_avg_pool2d for a fair comparison on a common grid.
+        aligned_teacher_features = [
+            F.adaptive_avg_pool2d(feat, target_size) for feat in Sou_Tar_features
+        ]
+        aligned_student_features = [
+            F.adaptive_avg_pool2d(feat, target_size) for feat in stu_features
+        ]
+
         if self.type == "train":
-            resized_stu_features = []
-            for i, feat in enumerate(stu_features):
-                target_size = Sou_Tar_features[i].shape[-2:]
-
-                if feat.shape[-2:] != target_size:
-                    resized_feat = F.interpolate(
-                        feat, size=target_size, mode="bilinear", align_corners=False
-                    )
-                    resized_stu_features.append(resized_feat)
-                else:
-                    resized_stu_features.append(feat)
-
             stu_features_ = self.feature_selection(
-                Sou_Tar_features, resized_stu_features, max
+                aligned_teacher_features, aligned_student_features, max
             )
             loss = self.loss_computation(
-                Sou_Tar_features, stu_features_, mask=mask, stop_gradient=stop_gradient
+                aligned_teacher_features,
+                stu_features_,
+                mask=mask,
+                stop_gradient=stop_gradient,
             )
-
             return loss
         else:
-            resized_stu_features = []
-            for i, feat in enumerate(stu_features):
-                target_size = Sou_Tar_features[i].shape[-2:]
-                if feat.shape[-2:] != target_size:
-                    resized_feat = F.interpolate(
-                        feat, size=target_size, mode="bilinear", align_corners=False
-                    )
-                    resized_stu_features.append(resized_feat)
-                else:
-                    resized_stu_features.append(feat)
-
-            return Sou_Tar_features, resized_stu_features
+            # Return the aligned features for anomaly map calculation in the evaluation script.
+            return aligned_teacher_features, aligned_student_features
 
 
 class Teachers(nn.Module):
