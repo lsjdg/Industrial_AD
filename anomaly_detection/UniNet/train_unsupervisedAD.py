@@ -66,12 +66,12 @@ def train(c):
 
     # ---------------------------------------------training-----------------------------------------------
     for epoch in range(c.epochs):
-        print(f"training epoch: {epoch}")
+        print(f"training epoch: {epoch + 1}")
         model.train_or_eval(type="train")
         loss_list = []
         for sample in train_dataloader:
             img = sample[0].to(device)
-            loss = model(img)
+            loss = model(img, stop_gradient=False)
             optimizer.zero_grad()
             optimizer1.zero_grad()
             loss.backward()
@@ -80,7 +80,7 @@ def train(c):
             optimizer1.step()
             loss_list.append(loss.item())
 
-        # ------------------------------------evaluation-------------------------------------
+        # ------------------------------------eval industrial and video-------------------------------------
 
         if dataset_name in ["MVTecAD", "MTD"]:
             print(
@@ -91,7 +91,7 @@ def train(c):
 
         modules_list = [model.t.t_t, model.bn.bn, model.s.s1, DFS]
         best_iroc = False
-        if (epoch + 1) % 10 == 0 and c.domain in ["industrial"]:
+        if (epoch + 1) % 3 == 0 and c.domain in ["industrial"]:
 
             if dataset_name in ["MVTecAD", "MTD"]:
                 # evaluation

@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from .Loss import losses
 
 
@@ -63,17 +64,17 @@ class UniNet(nn.Module):
         selected_features = self.dfs(a, b, learnable=True, conv=False, max=max)
         return selected_features
 
-    def loss_computation(self, b, a, margin=1, mask=None):
+    def loss_computation(self, b, a, margin=1, mask=None, stop_gradient=False):
         T = (
             0.1
             if self._class_ in ["transistor", "pill", "cable", "bottle", "grid", "foam"]
             else self.T
         )
-        # For industrial datasets, stop_gradient is always False.
-        loss = losses(b, a, T, margin, mask=mask, stop_gradient=False)
+        loss = losses(b, a, T, margin, mask=mask, stop_gradient=stop_gradient)
+
         return loss
 
-    def forward(self, x, max=True, mask=None):
+    def forward(self, x, max=True, mask=None, stop_gradient=False):
         Sou_Tar_features, bnins = self.t(x)
         bnsout = self.bn(bnins)
         stu_features = self.s(bnsout)
@@ -89,12 +90,39 @@ class UniNet(nn.Module):
         ]
 
         if self.type == "train":
-            stu_features_ = self.feature_selection(Sou_Tar_features, stu_features, max)
-            loss = self.loss_computation(Sou_Tar_features, stu_features_, mask=mask)
+            resized_stu_features = []
+            for i, feat in enumerate(stu_features):
+                target_size = Sou_Tar_features[i].shape[-2:]
+
+                if feat.shape[-2:] != target_size:
+                    resized_feat = F.interpolate(
+                        feat, size=target_size, mode="bilinear", align_corners=False
+                    )
+                    resized_stu_features.append(resized_feat)
+                else:
+                    resized_stu_features.append(feat)
+
+            stu_features_ = self.feature_selection(
+                Sou_Tar_features, resized_stu_features, max
+            )
+            loss = self.loss_computation(
+                Sou_Tar_features, stu_features_, mask=mask, stop_gradient=stop_gradient
+            )
 
             return loss
         else:
-            return Sou_Tar_features, stu_features
+            resized_stu_features = []
+            for i, feat in enumerate(stu_features):
+                target_size = Sou_Tar_features[i].shape[-2:]
+                if feat.shape[-2:] != target_size:
+                    resized_feat = F.interpolate(
+                        feat, size=target_size, mode="bilinear", align_corners=False
+                    )
+                    resized_stu_features.append(resized_feat)
+                else:
+                    resized_stu_features.append(feat)
+
+            return Sou_Tar_features, resized_stu_features
 
 
 class Teachers(nn.Module):

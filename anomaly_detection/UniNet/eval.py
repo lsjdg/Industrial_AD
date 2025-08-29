@@ -20,7 +20,7 @@ from multiprocessing import Pool
 from skimage.measure import label, regionprops
 from visualization import (
     save_anomaly_visualization,
-)  # Import the visualization function
+)
 
 from UniNet_lib.mechanism import weighted_decision_mechanism
 
@@ -69,6 +69,18 @@ def evaluation_indusAD(
         gt_label = np.asarray(gt_list_sp, dtype=np.bool_)
         gt_mask = np.squeeze(np.asarray(gt_list_px, dtype=np.bool_), axis=1)
 
+        # anomaly_map을 gt_mask와 동일한 크기로 업샘플링하여 픽셀 레벨 AUROC 계산 오류를 해결합니다.
+        anomaly_map = (
+            F.interpolate(
+                torch.from_numpy(anomaly_map).unsqueeze(1),
+                size=gt_mask.shape[1:],  # gt_mask의 (H, W) 크기를 목표로 설정
+                mode="bilinear",
+                align_corners=False,
+            )
+            .squeeze(1)
+            .numpy()
+        )
+
         auroc_px = round(
             roc_auc_score(gt_mask.flatten(), anomaly_map.flatten()) * 100, 1
         )
@@ -78,33 +90,28 @@ def evaluation_indusAD(
 
         pro = round(eval_seg_pro(gt_mask, anomaly_map), 1)
 
-    # Visualization part
     if save_visuals:
-        # Only visualize for abnormal images
         abnormal_indices = np.where(gt_label == 1)[0]
 
-        # Base directory for visuals: saved_results/dataset/visuals/class_name/
         base_visual_save_dir = os.path.join(c.save_dir, "visuals", c.dataset, c._class_)
 
         print(
             f"Saving visuals for {len(abnormal_indices)} abnormal samples to {base_visual_save_dir}..."
         )
-        # Iterate through abnormal samples to save visualizations
-        for i in abnormal_indices:  # Iterate through all abnormal images
-            map_np = anomaly_map[i]  # Get the anomaly map for this specific image
+
+        for i in abnormal_indices:
+            map_np = anomaly_map[i]
             map_ts = torch.tensor(map_np)
-            full_image_path = original_paths[i][0]  # Get the original full path
+            full_image_path = original_paths[i][0]
             print(type(full_image_path))
             print(full_image_path)
-            # Extract anomaly type (e.g., 'broken_large') and image filename (e.g., '000.png')
-            # Assuming path structure: .../class_name/test/anomaly_type/image_name.png
+
             path_parts = full_image_path.split(os.sep)
-            anomaly_type = path_parts[-2]  # The folder name before the image file
+            anomaly_type = path_parts[-2]
             image_filename = os.path.basename(full_image_path)
             root, ext = os.path.splitext(image_filename)
             image_filename = f"{root}_map{ext}"
 
-            # Construct the final save path: base_visual_save_dir/anomaly_type/image_filename
             final_save_dir = os.path.join(base_visual_save_dir, anomaly_type)
             final_save_path = os.path.join(final_save_dir, image_filename)
 
