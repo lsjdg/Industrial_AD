@@ -42,22 +42,123 @@ def loading_dataset(c, dataset_name):
     return train_dataloader, test_dataloader
 
 
-class ClaheTransform:
-    """Applies Contrast Limited Adaptive Histogram Equalization to the L-channel of an LAB image."""
+# class DarkenGlare:
+#     def __init__(
+#         self,
+#         lower=(200, 200, 200),
+#         upper=(255, 255, 255),
+#         strength=0.3,
+#         dilate=3,
+#         feather=7,
+#         use_hsv_thr=False,
+#     ):
+#         self.lower = lower
+#         self.upper = upper
+#         self.strength = strength
+#         self.dilate = dilate
+#         self.feather = feather
+#         self.use_hsv_thr = use_hsv_thr
 
-    def __init__(self, clip_limit=2.0, tile_grid_size=(8, 8)):
-        self.clip_limit = clip_limit
-        self.tile_grid_size = tile_grid_size
+#     def __call__(self, img):
+
+#         if self.use_hsv_thr:
+#             V = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)[:, :, 2]
+#             thr = max(int(np.percentile(V, 99.0)), 230)
+#             mask = (V >= thr).astype(np.uint8) * 255
+#         else:
+#             mask = cv2.inRange(img, self.lower, self.upper)
+
+#         if self.dilate > 0:
+#             k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (self.dilate, self.dilate))
+#             mask = cv2.dilate(mask, k, 1)
+#         m = mask.astype(np.float32) / 255.0
+#         if self.feather > 0:
+#             m = cv2.GaussianBlur(m, (self.feather | 1, self.feather | 1), 0)
+
+#         # HSV에서 V만 줄이기
+#         hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+#         H, S, V = cv2.split(hsv)
+#         Vf = V.astype(np.float32) * (1.0 - self.strength * m)
+#         out = cv2.cvtColor(
+#             cv2.merge([H, S, np.clip(Vf, 0, 255).astype(np.uint8)]), cv2.COLOR_HSV2BGR
+#         )
+#         return out
+
+# transforms.py
+import cv2, numpy as np
+from PIL import Image
+
+
+class DarkenGlare:
+    def __init__(
+        self,
+        lower=(200, 200, 200),
+        upper=(255, 255, 255),
+        strength=0.3,
+        dilate=3,
+        feather=7,
+        use_hsv_thr=False,
+        v_pct=99.0,
+        v_abs=230,
+        s_max=80,
+    ):
+        self.lower, self.upper = lower, upper
+        self.strength, self.dilate, self.feather = strength, dilate, feather
+        self.use_hsv_thr, self.v_pct, self.v_abs, self.s_max = (
+            use_hsv_thr,
+            v_pct,
+            v_abs,
+            s_max,
+        )
 
     def __call__(self, img: Image.Image) -> Image.Image:
-        img_np = np.array(img)
-        img_lab = cv2.cvtColor(img_np, cv2.COLOR_RGB2LAB)
-        clahe = cv2.createCLAHE(
-            clipLimit=self.clip_limit, tileGridSize=self.tile_grid_size
+        # PIL -> ndarray(BGR)
+        if img.mode == "RGB":
+            bgr = cv2.cvtColor(np.asarray(img), cv2.COLOR_RGB2BGR)
+            alpha = None
+        elif img.mode == "RGBA":
+            rgba = np.asarray(img)
+            bgr = cv2.cvtColor(rgba, cv2.COLOR_RGBA2BGR)
+            alpha = rgba[..., 3]
+        elif img.mode == "L":
+            bgr = cv2.cvtColor(np.asarray(img), cv2.COLOR_GRAY2BGR)
+            alpha = None
+        else:
+            bgr = cv2.cvtColor(np.asarray(img.convert("RGB")), cv2.COLOR_RGB2BGR)
+            alpha = None
+
+        # 마스크
+        if self.use_hsv_thr:
+            hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
+            V, S = hsv[..., 2], hsv[..., 1]
+            thr = max(int(np.percentile(V, self.v_pct)), self.v_abs)
+            mask = ((V >= thr) & (S <= self.s_max)).astype(np.uint8) * 255
+        else:
+            mask = cv2.inRange(bgr, self.lower, self.upper)
+
+        if self.dilate > 0:
+            k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (self.dilate, self.dilate))
+            mask = cv2.dilate(mask, k, 1)
+        m = mask.astype(np.float32) / 255.0
+        if self.feather > 0:
+            ksz = self.feather | 1
+            m = cv2.GaussianBlur(m, (ksz, ksz), 0)
+
+        # HSV V만 감산
+        hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
+        H, S, V = cv2.split(hsv)
+        Vf = np.clip(V.astype(np.float32) * (1.0 - self.strength * m), 0, 255).astype(
+            np.uint8
         )
-        img_lab[:, :, 0] = clahe.apply(img_lab[:, :, 0])
-        img_rgb = cv2.cvtColor(img_lab, cv2.COLOR_LAB2RGB)
-        return Image.fromarray(img_rgb)
+        out_bgr = cv2.cvtColor(cv2.merge([H, S, Vf]), cv2.COLOR_HSV2BGR)
+
+        # ndarray(BGR) -> PIL
+        out_rgb = cv2.cvtColor(out_bgr, cv2.COLOR_BGR2RGB)
+        if alpha is not None:
+            out = Image.fromarray(np.dstack([out_rgb, alpha]), mode="RGBA")
+        else:
+            out = Image.fromarray(out_rgb, mode="RGB")
+        return out
 
 
 class BaseADDataset(torch.utils.data.Dataset):
@@ -71,7 +172,7 @@ class BaseADDataset(torch.utils.data.Dataset):
         self.transform_x = T.Compose(
             [
                 T.Resize(c.image_size, InterpolationMode.LANCZOS),
-                # T.CenterCrop(c.center_crop),
+                DarkenGlare(),
                 T.ToTensor(),
             ]
         )
@@ -79,7 +180,6 @@ class BaseADDataset(torch.utils.data.Dataset):
         self.transform_gt = T.Compose(
             [
                 T.Resize(c.image_size, InterpolationMode.NEAREST),
-                # T.CenterCrop(c.center_crop),
                 T.ToTensor(),
             ]
         )
@@ -169,7 +269,7 @@ class MtdDataset(torch.utils.data.Dataset):
         self.transform_x = T.Compose(
             [
                 T.Resize(self.image_size, InterpolationMode.LANCZOS),
-                ClaheTransform(),
+                DarkenGlare(),
                 T.ToTensor(),
             ]
         )
