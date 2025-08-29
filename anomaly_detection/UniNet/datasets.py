@@ -16,24 +16,6 @@ warnings.filterwarnings(
 )
 
 
-class ClaheTransform:
-    """Applies Contrast Limited Adaptive Histogram Equalization to the L-channel of an LAB image."""
-
-    def __init__(self, clip_limit=2.0, tile_grid_size=(8, 8)):
-        self.clip_limit = clip_limit
-        self.tile_grid_size = tile_grid_size
-
-    def __call__(self, img: Image.Image) -> Image.Image:
-        img_np = np.array(img)
-        img_lab = cv2.cvtColor(img_np, cv2.COLOR_RGB2LAB)
-        clahe = cv2.createCLAHE(
-            clipLimit=self.clip_limit, tileGridSize=self.tile_grid_size
-        )
-        img_lab[:, :, 0] = clahe.apply(img_lab[:, :, 0])
-        img_rgb = cv2.cvtColor(img_lab, cv2.COLOR_LAB2RGB)
-        return Image.fromarray(img_rgb)
-
-
 def loading_dataset(c, dataset_name):
     train_dataloader, test_dataloader = None, None
 
@@ -60,6 +42,24 @@ def loading_dataset(c, dataset_name):
     return train_dataloader, test_dataloader
 
 
+class ClaheTransform:
+    """Applies Contrast Limited Adaptive Histogram Equalization to the L-channel of an LAB image."""
+
+    def __init__(self, clip_limit=2.0, tile_grid_size=(8, 8)):
+        self.clip_limit = clip_limit
+        self.tile_grid_size = tile_grid_size
+
+    def __call__(self, img: Image.Image) -> Image.Image:
+        img_np = np.array(img)
+        img_lab = cv2.cvtColor(img_np, cv2.COLOR_RGB2LAB)
+        clahe = cv2.createCLAHE(
+            clipLimit=self.clip_limit, tileGridSize=self.tile_grid_size
+        )
+        img_lab[:, :, 0] = clahe.apply(img_lab[:, :, 0])
+        img_rgb = cv2.cvtColor(img_lab, cv2.COLOR_LAB2RGB)
+        return Image.fromarray(img_rgb)
+
+
 class BaseADDataset(torch.utils.data.Dataset):
     """Base class for anomaly detection datasets to handle common transforms."""
 
@@ -71,7 +71,7 @@ class BaseADDataset(torch.utils.data.Dataset):
         self.transform_x = T.Compose(
             [
                 T.Resize(c.image_size, InterpolationMode.LANCZOS),
-                T.CenterCrop(c.center_crop),
+                # T.CenterCrop(c.center_crop),
                 T.ToTensor(),
             ]
         )
@@ -79,7 +79,7 @@ class BaseADDataset(torch.utils.data.Dataset):
         self.transform_gt = T.Compose(
             [
                 T.Resize(c.image_size, InterpolationMode.NEAREST),
-                T.CenterCrop(c.center_crop),
+                # T.CenterCrop(c.center_crop),
                 T.ToTensor(),
             ]
         )
@@ -150,13 +150,10 @@ class MVTecDataset(BaseADDataset):
 
 
 class MtdDataset(torch.utils.data.Dataset):
-    def __init__(self, c, is_train=True, dataset="MTD_exp_2"):
+    def __init__(self, c, is_train=True, dataset="MTD_exp"):
         super().__init__()
-        # Set a fixed canvas size. All images will be padded to this size.
-        self.canvas_size = (c.image_size, c.image_size)
+        self.image_size = (c.image_size, c.image_size)
         self.dataset_path = "../../../data/" + dataset
-        # Set a maximum size to resize large images, preventing OOM.
-        self.max_size = c.image_size
         self.phase = "train" if is_train else "test"
         self.img_dir = os.path.join(self.dataset_path, self.phase)
         self.gt_dir = os.path.join(self.dataset_path, "ground_truth")
@@ -164,61 +161,38 @@ class MtdDataset(torch.utils.data.Dataset):
         # load dataset
         self.x, self.y, self.gt = self.load_dataset()
 
-        self.normalize = T.Compose(
-            [T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])]
-        )
-
-    def pad_to_canvas(self, img, canvas_size, is_mask=False):
-        """Pads the image to the center of a fixed-size canvas using replication padding."""
-        w, h = img.size
-
-        pad_w = max(0, canvas_size[0] - w)
-        pad_h = max(0, canvas_size[1] - h)
-
-        # Center the image
-        left = pad_w // 2
-        right = pad_w - left
-        top = pad_h // 2
-        bottom = pad_h - top
-
-        padding = (left, top, right, bottom)
-        padding_mode = "reflect" if not is_mask else "constant"
-
-        return T.functional.pad(img, padding, padding_mode=padding_mode)
-
     def __getitem__(self, idx):
         x_path, y, gt_path = self.x[idx], self.y[idx], self.gt[idx]
         x = Image.open(x_path).convert("RGB")
 
-        # Apply CLAHE to handle lighting inconsistencies and reflections
-        x = ClaheTransform()(x)
+        # Transforms
+        self.transform_x = T.Compose(
+            [
+                T.Resize(self.image_size, InterpolationMode.LANCZOS),
+                ClaheTransform(),
+                T.ToTensor(),
+            ]
+        )
 
-        # Resize only if the image is larger than the max_size threshold
-        w, h = x.size
-        if w > self.max_size or h > self.max_size:
-            # Resize while maintaining aspect ratio
-            x.thumbnail((self.max_size, self.max_size), Image.LANCZOS)
+        self.transform_gt = T.Compose(
+            [
+                T.Resize(self.image_size, InterpolationMode.NEAREST),
+                T.ToTensor(),
+            ]
+        )
+        self.normalize = T.Compose(
+            [T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])]
+        )
 
-        if gt_path is None:
-            # For normal samples, create a black mask with the same size as the image
-            gt = Image.new("L", (w, h), 0)  # Use original w, h to create the mask
+        x = self.normalize(self.transform_x(x))
+
+        if y == 0:
+            gt = torch.zeros([1, *self.image_size])
         else:
-            gt = Image.open(gt_path).convert("L")
+            gt = Image.open(gt_path)
+            gt = self.transform_gt(gt)
 
-        # Apply the same resize logic to the ground truth mask
-        if w > self.max_size or h > self.max_size:
-            gt.thumbnail((self.max_size, self.max_size), Image.NEAREST)
-
-        # Pad both image and mask to the canvas size
-        x_padded = self.pad_to_canvas(x, self.canvas_size)
-        gt_padded = self.pad_to_canvas(gt, self.canvas_size, is_mask=True)
-
-        # Convert to tensor and then normalize the image
-        x_tensor = T.ToTensor()(x_padded)
-        x_tensor = self.normalize(x_tensor)
-        gt_tensor = T.ToTensor()(gt_padded)
-
-        return x_tensor, y, gt_tensor, x_path
+        return x, y, gt, x_path
 
     def __len__(self):
         return len(self.x)
