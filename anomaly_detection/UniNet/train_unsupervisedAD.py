@@ -91,7 +91,7 @@ def train(c):
 
         modules_list = [model.t.t_t, model.bn.bn, model.s.s1, DFS]
         best_iroc = False
-        if (epoch + 1) % 3 == 0 and c.domain in ["industrial"]:
+        if (epoch + 1) % 10 == 0 and c.domain in ["industrial"]:
 
             if dataset_name in ["MVTecAD", "MTD"]:
                 # evaluation
