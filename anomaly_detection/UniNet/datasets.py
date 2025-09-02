@@ -42,22 +42,99 @@ def loading_dataset(c, dataset_name):
     return train_dataloader, test_dataloader
 
 
+class DarkenGlare:
+    def __init__(
+        self,
+        lower=(200, 200, 200),
+        upper=(255, 255, 255),
+        strength=0.3,
+        dilate=3,
+        feather=7,
+        use_hsv_thr=False,
+        v_pct=99.0,
+        v_abs=230,
+        s_max=80,
+    ):
+        self.lower, self.upper = lower, upper
+        self.strength, self.dilate, self.feather = strength, dilate, feather
+        self.use_hsv_thr, self.v_pct, self.v_abs, self.s_max = (
+            use_hsv_thr,
+            v_pct,
+            v_abs,
+            s_max,
+        )
+
+    def __call__(self, img: Image.Image) -> Image.Image:
+        # PIL -> ndarray(BGR)
+        if img.mode == "RGB":
+            bgr = cv2.cvtColor(np.asarray(img), cv2.COLOR_RGB2BGR)
+            alpha = None
+        elif img.mode == "RGBA":
+            rgba = np.asarray(img)
+            bgr = cv2.cvtColor(rgba, cv2.COLOR_RGBA2BGR)
+            alpha = rgba[..., 3]
+        elif img.mode == "L":
+            bgr = cv2.cvtColor(np.asarray(img), cv2.COLOR_GRAY2BGR)
+            alpha = None
+        else:
+            bgr = cv2.cvtColor(np.asarray(img.convert("RGB")), cv2.COLOR_RGB2BGR)
+            alpha = None
+
+        # 마스크
+        if self.use_hsv_thr:
+            hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
+            V, S = hsv[..., 2], hsv[..., 1]
+            thr = max(int(np.percentile(V, self.v_pct)), self.v_abs)
+            mask = ((V >= thr) & (S <= self.s_max)).astype(np.uint8) * 255
+        else:
+            mask = cv2.inRange(bgr, self.lower, self.upper)
+
+        if self.dilate > 0:
+            k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (self.dilate, self.dilate))
+            mask = cv2.dilate(mask, k, 1)
+        m = mask.astype(np.float32) / 255.0
+        if self.feather > 0:
+            ksz = self.feather | 1
+            m = cv2.GaussianBlur(m, (ksz, ksz), 0)
+
+        # HSV V만 감산
+        hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
+        H, S, V = cv2.split(hsv)
+        Vf = np.clip(V.astype(np.float32) * (1.0 - self.strength * m), 0, 255).astype(
+            np.uint8
+        )
+        out_bgr = cv2.cvtColor(cv2.merge([H, S, Vf]), cv2.COLOR_HSV2BGR)
+
+        # ndarray(BGR) -> PIL
+        out_rgb = cv2.cvtColor(out_bgr, cv2.COLOR_BGR2RGB)
+        if alpha is not None:
+            out = Image.fromarray(np.dstack([out_rgb, alpha]), mode="RGBA")
+        else:
+            out = Image.fromarray(out_rgb, mode="RGB")
+        return out
+
+
 class UnifiedTransform:
     """
     Applies aspect-ratio-preserving resize (letterboxing) to both image and mask,
     and generates a padding exclusion mask.
     """
 
-    def __init__(self, image_size, fill_color=0):
+    def __init__(self, image_size, fill_color=0, pre_transform=None):
         if isinstance(image_size, int):
             self.image_size = (image_size, image_size)
         else:
             self.image_size = image_size  # (H, W)
         self.fill_color = fill_color
         self.to_tensor = T.ToTensor()
+        self.pre_transform = pre_transform
 
     def __call__(self, img: Image.Image, mask: Image.Image):
-        # 1. Calculate resize geometry from the image
+        # 0. Apply pre-processing transforms like DarkenGlare if provided
+        if self.pre_transform:
+            img = self.pre_transform(img)
+
+        # 1. Calculate resize geometry from the original or pre-processed image
         w, h = img.size
         target_h, target_w = self.image_size
         ratio = min(target_w / w, target_h / h)
@@ -90,8 +167,14 @@ class BaseADDataset(torch.utils.data.Dataset):
     def __init__(self, c, is_train=True, dataset="MVTecAD"):
         self.is_train = is_train
 
+        # Define pre-processing transforms to be applied before resizing
+        pre_transform = DarkenGlare(use_hsv_thr=True)
+
         # Unified transform for image, mask, and padding mask generation
-        self.transform = UnifiedTransform(image_size=c.image_size)
+        # It now includes the pre-processing step.
+        self.transform = UnifiedTransform(
+            image_size=c.image_size, pre_transform=pre_transform
+        )
 
         self.normalize = T.Compose(
             [T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])]
