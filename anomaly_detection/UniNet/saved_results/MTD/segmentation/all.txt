@@ -2,9 +2,9 @@ Results for dataset: MTD, class group: all, task: segmentation
 
 | class   |   P-AUROC |   PRO |
 |:--------|----------:|------:|
-| MTD     |      70.2 |  64.2 |
-| mean    |      70.2 |  64.2 |
+| MTD     |        70 |  76.9 |
+| mean    |        70 |  76.9 |
 
 Parameters:
 
-{'epochs': 100, 'batch_size': 8, 'image_size': 256, 'center_crop': 256, 'lr_s': 0.005, 'lr_t': 1e-06, 'T': 2, 'alpha': 0.01, 'beta': 3e-05}
+{'epochs': 100, 'batch_size': 8, 'image_size': 320, 'center_crop': 256, 'lr_s': 0.005, 'lr_t': 1e-06, 'T': 2, 'alpha': 0.01, 'beta': 3e-05}

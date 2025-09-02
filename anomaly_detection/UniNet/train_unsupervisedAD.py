@@ -66,7 +66,7 @@ def train(c):
 
     # ---------------------------------------------training-----------------------------------------------
     for epoch in range(c.epochs):
-        print(f"training epoch: {epoch}")
+        print(f"training epoch: {epoch + 1}")
         model.train_or_eval(type="train")
         loss_list = []
         for sample in train_dataloader:
